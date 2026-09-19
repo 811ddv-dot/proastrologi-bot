@@ -85,26 +85,28 @@ def request_json(url, payload, headers=None):
 def generate(day):
     if day.isoformat() == APPROVED_DATE:
         return validate(APPROVED)
-    key = os.environ.get('GEMINI_API_KEY', '').strip()
+    key = os.environ.get('GROQ_API_KEY', '').strip()
     if not key:
-        raise RuntimeError('Добавьте GEMINI_API_KEY в GitHub Actions Secrets. Старые тексты повторно не публикуются.')
-    model = os.environ.get('GEMINI_MODEL', 'gemini-3.1-flash-lite')
-    if not re.fullmatch(r'[a-zA-Z0-9.-]+', model):
+        raise RuntimeError('Добавьте GROQ_API_KEY в GitHub Actions Secrets. Старые тексты повторно не публикуются.')
+    model = os.environ.get('GROQ_MODEL', 'openai/gpt-oss-120b')
+    if not re.fullmatch(r'[a-zA-Z0-9_./-]+', model):
         raise RuntimeError('Недопустимое имя модели.')
     prompt = PROMPT + '\nДата выпуска: ' + day.isoformat() + '\nПримеры стиля:\n' + json.dumps(APPROVED, ensure_ascii=False)
-    schema = {'type': 'OBJECT', 'properties': {s: {'type': 'STRING'} for s in SIGNS}, 'required': list(SIGNS)}
     for attempt in range(3):
         response = request_json(
-            f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
-            {'contents': [{'parts': [{'text': prompt}]}],
-             'generationConfig': {'temperature': 1, 'maxOutputTokens': 16000,
-                                  'responseMimeType': 'application/json', 'responseSchema': schema}},
-            {'x-goog-api-key': key})
+            'https://api.groq.com/openai/v1/chat/completions',
+            {'model': model,
+             'messages': [{'role': 'system', 'content': 'Ты тщательно следуешь формату JSON.'},
+                          {'role': 'user', 'content': prompt}],
+             'temperature': 1,
+             'max_completion_tokens': 6000,
+             'response_format': {'type': 'json_object'}},
+            {'Authorization': f'Bearer {key}'})
         try:
-            candidate = response['candidates'][0]
-            if candidate.get('finishReason') != 'STOP':
+            candidate = response['choices'][0]
+            if candidate.get('finish_reason') != 'stop':
                 raise ValueError('Генерация не завершена.')
-            text = ''.join(p.get('text', '') for p in candidate['content']['parts'] if not p.get('thought'))
+            text = candidate['message']['content']
             edition = validate(json.loads(text))
             for body in edition.values():
                 if any(grams(body, 8) & grams(example, 8) for example in APPROVED.values()):
