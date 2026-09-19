@@ -9,6 +9,10 @@ on:
         description: "Preview only (no Telegram messages)"
         type: boolean
         default: true
+      preview_date:
+        description: "Date for preview in YYYY-MM-DD (optional)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -27,11 +31,16 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.PROASTROLOGI }}
           TELEGRAM_CHANNEL: "@proastrologi"
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           PREVIEW: ${{ inputs.preview }}
+          PREVIEW_DATE: ${{ inputs.preview_date }}
         run: |
           if [ "$PREVIEW" = "true" ]; then
-            python daily_horoscope.py --preview
+            if [ -n "$PREVIEW_DATE" ]; then
+              python daily_horoscope.py --preview --date "$PREVIEW_DATE"
+            else
+              python daily_horoscope.py --preview
+            fi
           else
             python daily_horoscope.py
           fi
