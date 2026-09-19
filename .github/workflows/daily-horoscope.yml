@@ -1,0 +1,20 @@
+name: Daily horoscope
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish today's 12 forecasts
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.PROASTROLOGI }}
+          TELEGRAM_CHANNEL: "@proastrologi"
+        run: python daily_horoscope.py
