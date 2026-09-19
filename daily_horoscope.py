@@ -87,16 +87,16 @@ def generate(day):
         return validate(APPROVED)
     # Some browser password managers copy a displayed key with line breaks.
     # API keys never contain whitespace, so normalize it before building the header.
-    key = ''.join(os.environ.get('GROQ_API_KEY', '').split())
+    key = ''.join(os.environ.get('OPENAI_API_KEY', '').split())
     if not key:
-        raise RuntimeError('Добавьте GROQ_API_KEY в GitHub Actions Secrets. Старые тексты повторно не публикуются.')
-    model = os.environ.get('GROQ_MODEL', 'openai/gpt-oss-120b')
+        raise RuntimeError('Добавьте OPENAI_API_KEY в GitHub Actions Secrets. Старые тексты повторно не публикуются.')
+    model = os.environ.get('OPENAI_MODEL', 'gpt-5-mini')
     if not re.fullmatch(r'[a-zA-Z0-9_./-]+', model):
         raise RuntimeError('Недопустимое имя модели.')
     prompt = PROMPT + '\nДата выпуска: ' + day.isoformat() + '\nПримеры стиля:\n' + json.dumps(APPROVED, ensure_ascii=False)
     for attempt in range(3):
         response = request_json(
-            'https://api.groq.com/openai/v1/chat/completions',
+            'https://api.openai.com/v1/chat/completions',
             {'model': model,
              'messages': [{'role': 'system', 'content': 'Ты тщательно следуешь формату JSON.'},
                           {'role': 'user', 'content': prompt}],
