@@ -85,7 +85,9 @@ def request_json(url, payload, headers=None):
 def generate(day):
     if day.isoformat() == APPROVED_DATE:
         return validate(APPROVED)
-    key = os.environ.get('GROQ_API_KEY', '').strip()
+    # Some browser password managers copy a displayed key with line breaks.
+    # API keys never contain whitespace, so normalize it before building the header.
+    key = ''.join(os.environ.get('GROQ_API_KEY', '').split())
     if not key:
         raise RuntimeError('Добавьте GROQ_API_KEY в GitHub Actions Secrets. Старые тексты повторно не публикуются.')
     model = os.environ.get('GROQ_MODEL', 'openai/gpt-oss-120b')
