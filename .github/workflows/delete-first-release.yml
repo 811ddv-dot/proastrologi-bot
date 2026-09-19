@@ -1,0 +1,15 @@
+name: Delete initial posts
+on: workflow_dispatch
+jobs:
+  delete:
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets.PROASTROLOGI }}
+    steps:
+      - run: |
+          python - <<'PY'
+          import os, urllib.parse, urllib.request
+          for message_id in range(1, 13):
+              data = urllib.parse.urlencode({'chat_id': '@proastrologi', 'message_id': message_id}).encode()
+              urllib.request.urlopen(urllib.request.Request(f"https://api.telegram.org/bot{os.environ['TOKEN'].strip()}/deleteMessage", data=data, method='POST'))
+          PY
