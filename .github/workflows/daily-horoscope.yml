@@ -4,17 +4,34 @@ on:
   schedule:
     - cron: "0 4 * * *"
   workflow_dispatch:
+    inputs:
+      preview:
+        description: "Preview only (no Telegram messages)"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
+concurrency:
+  group: daily-horoscope
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Publish today's 12 forecasts
+      - name: Generate and validate all 12 forecasts
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.PROASTROLOGI }}
           TELEGRAM_CHANNEL: "@proastrologi"
-        run: python daily_horoscope.py
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PREVIEW: ${{ inputs.preview }}
+        run: |
+          if [ "$PREVIEW" = "true" ]; then
+            python daily_horoscope.py --preview
+          else
+            python daily_horoscope.py
+          fi
