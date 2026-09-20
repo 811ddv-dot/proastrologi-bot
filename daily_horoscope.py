@@ -35,6 +35,9 @@ PROMPT = '''Ты автор оригинального развлекатель�
 Не обещай, что событие обязательно случится. Не начинай каждое предложение с «возможно».
 Пиши живым грамотным русским, без делового жаргона, туманных метафор и психотерапевтических лозунгов.
 Не заполняй объём словами «небольшой», «простой», «полезный», «ясность» и оптимистичной моралью.
+Не используй фразы «тема дня», «совет:», «личные границы», «перераспределение обязанностей».
+Не делай весь выпуск про согласование условий, рабочую нагрузку и реализацию идей.
+Различай сюжеты на уровне человеческих переживаний и обстоятельств, а не названий сфер.
 Не соединяй несвязанные события в одном абзаце и не делай все концовки одинаковыми.
 Характер знака может влиять на реакцию, но не подменяет прогноз описанием личности.
 
@@ -57,6 +60,8 @@ REVIEW_PROMPT = '''Ты независимый выпускающий редак
 Не отклоняй только за общую сферу (работа, отношения) или общие служебные слова.
 Не требуй литературного совершенства. Для каждого дефекта укажи знак, короткую цитату
 и конкретную инструкцию исправления; для повтора также сравниваемый знак/дату.
+Предлагай простые человеческие ситуации, не бизнес-процессы, роли модератора,
+реструктуризацию, масштабирование или форматы отчётности. Не вводи новые требования.
 Верни JSON {"issues": [{"sign": "Овен", "evidence": "цитата и сопоставление", "fix": "что изменить"}]}.
 Если конкретных дефектов нет, верни {"issues": []}. Не переписывай тексты.
 '''
@@ -128,8 +133,10 @@ def validate(edition):
         if re.search(r'в ближайшие дни|в ближайшее время|пересекутся|сойдутся воедино|профессиональную плоскость|плодотворный цикл', body.lower()):
             raise ValueError(f'{sign}: убрать абстрактный шаблон; нужен конкретный прогноз на один день.')
     for a, b in combinations(edition, 2):
-        if grams(edition[a]) & grams(edition[b]):
-            raise ValueError(f'Повторяющаяся формулировка: {a}, {b}.')
+        shared = grams(edition[a]) & grams(edition[b])
+        if shared:
+            phrase = ' '.join(sorted(shared)[0])
+            raise ValueError(f'Повторяющаяся формулировка: {a}, {b}: «{phrase}».')
     return edition
 
 
@@ -186,10 +193,20 @@ def generate(day):
                 if not isinstance(patches, dict) or set(patches) != set(targets):
                     raise ValueError('Неполный набор исправленных знаков.')
                 edition = {**edition, **patches}
-            validate(edition)
-            validate_originality(edition, history)
+            format_issues = []
+            try:
+                validate(edition)
+                validate_originality(edition, history)
+            except ValueError as exc:
+                format_issues = [{'sign': sign, 'evidence': str(exc),
+                                  'fix': 'Исправь указанное нарушение; хорошие части оставь.'}
+                                 for sign in SIGNS if sign in str(exc)]
+                if not format_issues:
+                    format_issues = [{'sign': sign, 'evidence': str(exc),
+                                      'fix': 'Устрани нарушение формата или повтор.'} for sign in SIGNS]
             feedback = review_issues(model_json(key, model, REVIEW_PROMPT,
                 {'requirements': PROMPT, 'date': day.isoformat(), 'edition': edition, 'history': history}))
+            feedback.extend(format_issues)
             if not feedback:
                 print('Редактор: выпуск принят.', file=sys.stderr, flush=True)
                 return edition
