@@ -79,3 +79,5 @@ jobs:
             preview.md
             preview-data.json
             preview-report.md
+            preview-post-*.txt
+            preview-post-*.html
