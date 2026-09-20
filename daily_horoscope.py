@@ -35,6 +35,8 @@ PROMPT = '''Ты автор оригинального развлекатель�
 Не обещай, что событие обязательно случится. Не начинай каждое предложение с «возможно».
 Пиши живым грамотным русским, без делового жаргона, туманных метафор и психотерапевтических лозунгов.
 Не заполняй объём словами «небольшой», «простой», «полезный», «ясность» и оптимистичной моралью.
+Не обязан давать совет: предпочтительнее описать, как могут сложиться обстоятельства.
+Хотя бы половина абзацев должна обходиться без повелительных форм и наставлений.
 Не используй фразы «тема дня», «совет:», «личные границы», «перераспределение обязанностей».
 Не делай весь выпуск про согласование условий, рабочую нагрузку и реализацию идей.
 Различай сюжеты на уровне человеческих переживаний и обстоятельств, а не названий сфер.
@@ -58,11 +60,16 @@ REVIEW_PROMPT = '''Ты независимый выпускающий редак
 3. Одинаковое настроение и композиция большинства текстов; советы вместо прогноза.
 4. Неестественные фразы, канцелярит или пустая мораль.
 Не отклоняй только за общую сферу (работа, отношения) или общие служебные слова.
+Близкие советы сами по себе НЕ дубль: для смыслового повтора должны совпасть одновременно
+центральная ситуация, её развитие и вывод. Разные причины и последствия общения — разные сюжеты.
+Отмечай только существенные дефекты, а не необязательные стилистические предпочтения.
 Не требуй литературного совершенства. Для каждого дефекта укажи знак, короткую цитату
 и конкретную инструкцию исправления; для повтора также сравниваемый знак/дату.
 Предлагай простые человеческие ситуации, не бизнес-процессы, роли модератора,
 реструктуризацию, масштабирование или форматы отчётности. Не вводи новые требования.
 Верни JSON {"issues": [{"sign": "Овен", "evidence": "цитата и сопоставление", "fix": "что изменить"}]}.
+Поле sign содержит ровно один ключ из edition, в именительном падеже. Для нескольких знаков
+создай отдельные замечания. Не используй «все знаки», «Девы», «Козероги» или объединённые названия.
 Если конкретных дефектов нет, верни {"issues": []}. Не переписывай тексты.
 '''
 
@@ -140,6 +147,14 @@ def validate(edition):
     return edition
 
 
+def clean_labels(edition):
+    # Formatting-only cleanup; never changes the substance of a prediction.
+    if isinstance(edition, dict):
+        return {sign: re.sub(r'\bСовет(?: дня)?:\s*', '', body).strip()
+                if isinstance(body, str) else body for sign, body in edition.items()}
+    return edition
+
+
 def review_issues(review):
     if not isinstance(review, dict) or not isinstance(review.get('issues'), list):
         raise ValueError('Редактор не вернул список замечаний.')
@@ -177,7 +192,7 @@ def generate(day):
     history = [item for item in read_history() if item['date'] < day.isoformat()]
     feedback = []
     edition = None
-    for attempt in range(3):
+    for attempt in range(4):
         try:
             if edition is None:
                 edition = model_json(key, model, PROMPT, {
@@ -193,6 +208,7 @@ def generate(day):
                 if not isinstance(patches, dict) or set(patches) != set(targets):
                     raise ValueError('Неполный набор исправленных знаков.')
                 edition = {**edition, **patches}
+            edition = clean_labels(edition)
             format_issues = []
             try:
                 validate(edition)
@@ -204,21 +220,28 @@ def generate(day):
                 if not format_issues:
                     format_issues = [{'sign': sign, 'evidence': str(exc),
                                       'fix': 'Устрани нарушение формата или повтор.'} for sign in SIGNS]
-            feedback = review_issues(model_json(key, model, REVIEW_PROMPT,
-                {'requirements': PROMPT, 'date': day.isoformat(), 'edition': edition, 'history': history}))
+            review_data = {'requirements': PROMPT, 'date': day.isoformat(), 'edition': edition, 'history': history}
+            review = model_json(key, model, REVIEW_PROMPT, review_data)
+            try:
+                feedback = review_issues(review)
+            except ValueError:
+                # Retry the review schema, not the already-written edition.
+                review_data['invalid_review'] = review
+                review_data['repair_request'] = 'Исправь только JSON замечаний: sign обязан точно совпадать с ключом edition.'
+                feedback = review_issues(model_json(key, model, REVIEW_PROMPT, review_data))
             feedback.extend(format_issues)
             if not feedback:
                 print('Редактор: выпуск принят.', file=sys.stderr, flush=True)
                 return edition
-            print(f'Редактор {attempt + 1}/3: ' + json.dumps(feedback, ensure_ascii=False),
+            print(f'Редактор {attempt + 1}/4: ' + json.dumps(feedback, ensure_ascii=False),
                   file=sys.stderr, flush=True)
         except (KeyError, IndexError, TypeError, ValueError) as exc:
-            print(f'Проверка {attempt + 1}/3: {exc}', file=sys.stderr, flush=True)
+            print(f'Проверка {attempt + 1}/4: {exc}', file=sys.stderr, flush=True)
             feedback = [{'sign': sign, 'evidence': str(exc), 'fix': 'Исправь нарушение формата или повтор.'}
                         for sign in SIGNS]
             if not isinstance(edition, dict) or set(edition) != set(SIGNS):
                 edition = None
-    raise RuntimeError('Выпуск не прошёл проверку после трёх попыток. Ничего не опубликовано.')
+    raise RuntimeError('Выпуск не прошёл проверку после четырёх попыток. Ничего не опубликовано.')
 
 
 def format_post(day, sign, body):

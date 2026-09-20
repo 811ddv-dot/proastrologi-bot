@@ -34,7 +34,7 @@ class EditorialTests(unittest.TestCase):
         edition = {sign: 'original ' + sign for sign in bot.SIGNS}
         issue = {'sign': 'Овен', 'evidence': 'Повтор', 'fix': 'Перепиши'}
         responses = [edition, {'issues': [issue]}, {'Овен': 'v2'}, {'issues': [issue]},
-                     {'Овен': 'v3'}, {'issues': [issue]}]
+                     {'Овен': 'v3'}, {'issues': [issue]}, {'Овен': 'v4'}, {'issues': [issue]}]
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
                 patch.object(bot, 'read_history', return_value=[]), \
                 patch.object(bot, 'validate', side_effect=lambda x: x), \
