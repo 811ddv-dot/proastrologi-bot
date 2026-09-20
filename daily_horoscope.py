@@ -10,6 +10,8 @@ import urllib.error
 import urllib.request
 from datetime import date, datetime
 from itertools import combinations
+from pathlib import Path
+from difflib import SequenceMatcher
 from zoneinfo import ZoneInfo
 
 SIGNS = dict(zip('Овен Телец Близнецы Рак Лев Дева Весы Скорпион Стрелец Козерог Водолей Рыбы'.split(), '♈♉♊♋♌♍♎♏♐♑♒♓'))
@@ -41,6 +43,70 @@ PROMPT = '''Ты редактор оригинального развлекат�
 Примеры ниже задают только качество и стиль. Не копируй их и не пересказывай их сюжеты.
 Верни JSON-объект: ключ — русское название знака, значение — только текст абзаца.
 '''
+
+# No fixed sign examples: they anchor the model to yesterday's themes.
+PROMPT = '''Напиши оригинальный развлекательный гороскоп на русском для всех 12 знаков.
+Для каждого знака один связный абзац, 65–105 слов, 4–6 естественных предложений, обращение на «вы».
+Нужен живой редакционный общий прогноз: сочетай две или три жизненные сферы,
+связывая их по смыслу, а не перечисляя. Пусть читатель узнаёт ситуации своей жизни.
+Пиши о возможностях и вероятных событиях, а не только о характере человека и советах.
+Балансируй благоприятные, спокойные и неоднозначные дни между знаками.
+Не назначай всем проблему и обязательный совет. Меняй порядок мыслей, длину предложений,
+настроение, начало и концовку. Не строй 12 текстов по одинаковой композиции.
+Без явных меток «риск», «трудность», «опасность», «совет дня» и канцелярских оборотов.
+Не закрепляй за Тельцом покупки, Девой порядок, Рыбами творчество и прочие стереотипы.
+Не повторяй темы, основные события и советы из приложенной истории, особенно для того же знака.
+Различие слов при сохранении прежнего смысла не считается новым прогнозом.
+Простой грамотный русский язык, плавные переходы, никаких натянутых метафор или нравоучений.
+Без утра, вечера, рубрик, списков, эмодзи, хэштегов и разметки внутри абзацев.
+Не копируй и не пересказывай Mail.ru или другие издания. Не заявляй о расчёте планет.
+Без гарантированных событий, медицинских и инвестиционных рекомендаций или запугивания.
+Верни JSON: русское название каждого знака — текст его прогноза.
+'''
+
+STATE = Path('horoscope-state/history.json')
+
+
+def read_history():
+    if not STATE.exists():
+        return []
+    history = json.loads(STATE.read_text(encoding='utf-8'))
+    if not isinstance(history, list):
+        raise ValueError('Повреждена история выпусков.')
+    return history[-7:]
+
+
+def remember(day, edition):
+    history = [item for item in read_history() if item['date'] != day.isoformat()]
+    history.append({'date': day.isoformat(), 'forecasts': edition})
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    temporary = STATE.with_suffix('.tmp')
+    temporary.write_text(json.dumps(history[-7:], ensure_ascii=False, indent=2), encoding='utf-8')
+    temporary.replace(STATE)
+
+
+def validate_originality(edition, history):
+    previous = [body for item in history for body in item['forecasts'].values()]
+    for body in edition.values():
+        for old in previous:
+            if grams(body, 7) & grams(old, 7) or SequenceMatcher(None, words(body), words(old)).ratio() > .60:
+                raise ValueError('Прогноз повторяет предыдущий выпуск.')
+    for a, b in combinations(edition.values(), 2):
+        if SequenceMatcher(None, words(a), words(b)).ratio() > .55:
+            raise ValueError('Прогнозы знаков слишком похожи.')
+
+
+def model_json(key, model, instruction, data):
+    response = request_json(
+        'https://api.openai.com/v1/chat/completions',
+        {'model': model, 'messages': [{'role': 'system', 'content': instruction},
+                                    {'role': 'user', 'content': json.dumps(data, ensure_ascii=False)}],
+         'max_completion_tokens': 12000, 'response_format': {'type': 'json_object'}},
+        {'Authorization': f'Bearer {key}'})
+    candidate = response['choices'][0]
+    if candidate.get('finish_reason') != 'stop':
+        raise ValueError('Генерация не завершена.')
+    return json.loads(candidate['message']['content'])
 
 
 def words(text):
@@ -82,8 +148,6 @@ def request_json(url, payload, headers=None):
 
 
 def generate(day):
-    if day.isoformat() == APPROVED_DATE:
-        return validate(APPROVED)
     # Some browser password managers copy a displayed key with line breaks.
     # API keys never contain whitespace, so normalize it before building the header.
     key = ''.join(os.environ.get('OPENAI_API_KEY', '').split())
@@ -92,29 +156,27 @@ def generate(day):
     model = os.environ.get('OPENAI_MODEL', 'gpt-5-mini')
     if not re.fullmatch(r'[a-zA-Z0-9_./-]+', model):
         raise RuntimeError('Недопустимое имя модели.')
-    prompt = PROMPT + '\nДата выпуска: ' + day.isoformat() + '\nПримеры стиля:\n' + json.dumps(APPROVED, ensure_ascii=False)
+    history = [item for item in read_history() if item['date'] < day.isoformat()]
+    feedback = []
     for attempt in range(3):
-        response = request_json(
-            'https://api.openai.com/v1/chat/completions',
-            {'model': model,
-             'messages': [{'role': 'system', 'content': 'Ты тщательно следуешь формату JSON.'},
-                          {'role': 'user', 'content': prompt}],
-             'temperature': 1,
-             'max_completion_tokens': 6000,
-             'response_format': {'type': 'json_object'}},
-            {'Authorization': f'Bearer {key}'})
         try:
-            candidate = response['choices'][0]
-            if candidate.get('finish_reason') != 'stop':
-                raise ValueError('Генерация не завершена.')
-            text = candidate['message']['content']
-            edition = validate(json.loads(text))
-            for body in edition.values():
-                if any(grams(body, 8) & grams(example, 8) for example in APPROVED.values()):
-                    raise ValueError('Скопирован фрагмент образца.')
+            edition = validate(model_json(key, model, PROMPT, {
+                'date': day.isoformat(), 'signs': list(SIGNS), 'history': history,
+                'editor_feedback': feedback}))
+            validate_originality(edition, history)
+            review = model_json(key, model,
+                'Ты строгий литературный редактор. Проверь выпуск по заданию. '
+                'Особенно проверь одинаковую композицию у знаков, повтор сюжетов и советов '
+                'из истории, стереотипы знаков, неестественный русский язык и избыток наставлений. '
+                'Не принимай набор психологических советов за прогноз. '
+                'Верни JSON {"approved": true/false, "issues": [конкретные замечания с названием знака]}. '
+                'Одобряй только если существенных недостатков нет.',
+                {'requirements': PROMPT, 'edition': edition, 'history': history})
+            if review.get('approved') is not True or review.get('issues') != []:
+                raise ValueError('Редактор: ' + json.dumps(review.get('issues', ['Нет одобрения']), ensure_ascii=False))
             return edition
         except (KeyError, IndexError, TypeError, ValueError) as exc:
-            prompt += '\nПредыдущий ответ не прошёл проверку: ' + str(exc) + '. Напиши новый полный выпуск.'
+            feedback.append(str(exc))
     raise RuntimeError('Выпуск не прошёл проверку после трёх попыток. Ничего не опубликовано.')
 
 
@@ -126,13 +188,20 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--preview', action='store_true', help='Показать выпуск без отправки в Telegram')
     parser.add_argument('--date', type=date.fromisoformat, help='Дата только для предпросмотра')
+    parser.add_argument('--remember-preview', action='store_true', help='Сохранить предпросмотр в отдельную тестовую историю')
     args = parser.parse_args()
     if args.date and not args.preview:
         parser.error('--date разрешён только вместе с --preview')
     day = args.date or datetime.now(ZoneInfo('Europe/Moscow')).date()
+    if not args.preview and any(item['date'] == day.isoformat() for item in read_history()):
+        print('Выпуск на эту дату уже отправлен. Повтор пропущен.')
+        return
     edition = generate(day)  # Validate all 12 before sending even the first post.
     posts = [format_post(day, sign, edition[sign]) for sign in SIGNS]
     if args.preview:
+        Path('preview.md').write_text('\n\n'.join(post.replace('<b>', '**').replace('</b>', '**') for post in posts), encoding='utf-8')
+        if args.remember_preview:
+            remember(day, edition)
         print('\n\n'.join(posts))
         return
     token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
@@ -146,6 +215,7 @@ def main():
             raise RuntimeError(f'Telegram отклонил сообщение {index}; остановка без повторной отправки.')
         print(f'Отправлено {index}/12; message_id={response["result"]["message_id"]}', flush=True)
         time.sleep(1)
+    remember(day, edition)
 
 
 if __name__ == '__main__':
