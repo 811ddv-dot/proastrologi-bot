@@ -73,20 +73,35 @@ class EditorialTests(unittest.TestCase):
         edition = {sign: 'text' for sign in bot.SIGNS}
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
                 patch.object(bot, 'validate'), patch.object(bot, 'validate_originality'), \
-                patch.object(bot, 'validate_language', side_effect=[ValueError('Овен: канцеляризм'), None]), \
+                patch.object(bot, 'edition_issues', side_effect=[{'Овен': ['канцеляризм']}, {}]), \
                 patch.object(bot, 'model_json', side_effect=[plan, edition, edition, edition]) as model:
             bot.generate_bundle(date(2026, 9, 21), [])
         self.assertEqual(model.call_count, 4)
-        self.assertIn('канцеляризм', model.call_args.args[3]['validation_error'])
+        self.assertIn('канцеляризм', model.call_args.args[3]['validation_error']['Овен'])
 
     def test_failed_edit_never_returns_bundle(self):
         plan = sample_plan()
         edition = {sign: 'text' for sign in bot.SIGNS}
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
-                patch.object(bot, 'validate', side_effect=ValueError('Овен: неверный текст')), \
+                patch.object(bot, 'edition_issues', return_value={'Овен': ['неверный текст']}), \
                 patch.object(bot, 'model_json', side_effect=[plan, edition, edition, edition, edition]):
             with self.assertRaisesRegex(RuntimeError, 'Ничего не опубликовано'):
                 bot.generate_bundle(date(2026, 9, 21), [])
+
+    def test_repair_preserves_other_signs_even_if_model_changes_them(self):
+        edition = {sign: 'original ' + sign for sign in bot.SIGNS}
+        changed = {sign: 'changed ' + sign for sign in bot.SIGNS}
+        with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
+                patch.object(bot, 'edition_issues', side_effect=[{'Овен': ['length']}, {}]), \
+                patch.object(bot, 'model_json', side_effect=[sample_plan(), edition, edition, changed]):
+            result = bot.generate_bundle(date(2026, 9, 21), [])['forecasts']
+        self.assertEqual(result['Овен'], changed['Овен'])
+        for sign in set(bot.SIGNS) - {'Овен'}:
+            self.assertEqual(result[sign], edition[sign])
+
+    def test_all_invalid_signs_are_reported_together(self):
+        edition = {sign: 'Слишком коротко.' for sign in bot.SIGNS}
+        self.assertEqual(set(bot.edition_issues(edition, [])), set(bot.SIGNS))
 
     def test_jargon_and_example_copy_rejected(self):
         with self.assertRaises(ValueError):

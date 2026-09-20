@@ -77,8 +77,8 @@ def grams(text, size=5):
     return {tuple(tokens[i:i + size]) for i in range(len(tokens) - size + 1)}
 
 
-def validate(edition):
-    if not isinstance(edition, dict) or set(edition) != set(SIGNS):
+def validate(edition, require_all=True):
+    if not isinstance(edition, dict) or (require_all and set(edition) != set(SIGNS)):
         raise ValueError('Нужны ровно 12 знаков без пропусков.')
     for sign, body in edition.items():
         if not isinstance(body, str) or not 55 <= len(words(body)) <= 100:
@@ -185,17 +185,21 @@ def generate_bundle(day, history):
         'date': day.isoformat(), 'plan': plan, 'examples': EXAMPLES, 'history': history})
     editorial_input = {'date': day.isoformat(), 'plan': plan, 'edition': draft,
                        'examples': EXAMPLES, 'history': history}
+    repair_signs = None
     for attempt in range(3):
-        edition = clean_labels(model_json(key, model, LANGUAGE_PROMPT, editorial_input))
-        try:
-            validate(edition)
-            validate_originality(edition, history)
-            validate_language(edition)
+        candidate = clean_labels(model_json(key, model, LANGUAGE_PROMPT, editorial_input))
+        if repair_signs is not None and isinstance(candidate, dict) and isinstance(edition, dict):
+            edition = {sign: candidate.get(sign, edition.get(sign)) if sign in repair_signs
+                       else edition[sign] for sign in SIGNS}
+        else:
+            edition = candidate
+        issues = edition_issues(edition, history)
+        if not issues:
             break
-        except (ValueError, TypeError, KeyError) as exc:
-            editorial_input['edition'] = edition
-            editorial_input['validation_error'] = str(exc)
-            print(f'Язык/формат {attempt + 1}/3: {exc}', file=sys.stderr, flush=True)
+        repair_signs = set(issues)
+        editorial_input = {**editorial_input, 'edition': edition,
+                           'validation_error': issues, 'repair_signs': list(issues)}
+        print(f'Язык/формат {attempt + 1}/3: {issues}', file=sys.stderr, flush=True)
     else:
         raise RuntimeError('Редактура не прошла проверку. Ничего не опубликовано.')
     print(f'{day}: написание и отдельная языковая редактура завершены.', file=sys.stderr, flush=True)
@@ -215,6 +219,33 @@ def validate_language(edition):
             if grams(body, 7) & grams(example, 7):
                 raise ValueError(f'{sign}: скопирована фраза из образца; напиши оригинально.')
     return edition
+
+
+def edition_issues(edition, history):
+    if not isinstance(edition, dict) or set(edition) != set(SIGNS):
+        return {sign: ['Нужны ровно 12 знаков без пропусков.'] for sign in SIGNS}
+    issues = {}
+    for sign, body in edition.items():
+        try:
+            validate({sign: body}, require_all=False)
+            validate_language({sign: body})
+            validate_originality({sign: body}, history)
+        except (ValueError, TypeError, KeyError) as exc:
+            issues.setdefault(sign, []).append(str(exc))
+    for a, b in combinations(edition, 2):
+        if a in issues or b in issues:
+            continue
+        try:
+            validate({a: edition[a], b: edition[b]}, require_all=False)
+            validate_originality({a: edition[a], b: edition[b]}, [])
+        except ValueError as exc:
+            issues.setdefault(b, []).append(str(exc))
+    patterned = [sign for sign, body in edition.items() if isinstance(body, str)
+                 and re.search(r'легче всего|сложнее\s*[—–-]', body.lower())]
+    if len(patterned) >= 3:
+        for sign in patterned:
+            issues.setdefault(sign, []).append('Убери одинаковую композицию «легче всего — сложнее».')
+    return issues
 
 
 def format_post(day, sign, body):
