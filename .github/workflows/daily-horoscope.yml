@@ -13,6 +13,11 @@ on:
         description: "Date for preview in YYYY-MM-DD (optional)"
         type: string
         default: ""
+      preview_days:
+        description: "Consecutive preview days (test history only)"
+        type: choice
+        options: ["1", "3"]
+        default: "1"
 
 permissions:
   contents: read
@@ -24,9 +29,11 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Test editorial pipeline without API calls
+        run: python -m unittest -v
       - uses: actions/cache/restore@v4
         with:
           path: horoscope-state
@@ -39,12 +46,13 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PREVIEW: ${{ inputs.preview }}
           PREVIEW_DATE: ${{ inputs.preview_date }}
+          PREVIEW_DAYS: ${{ inputs.preview_days || '1' }}
         run: |
           if [ "$PREVIEW" = "true" ]; then
             if [ -n "$PREVIEW_DATE" ]; then
-              python daily_horoscope.py --preview --date "$PREVIEW_DATE"
+              python daily_horoscope.py --preview --date "$PREVIEW_DATE" --preview-days "$PREVIEW_DAYS"
             else
-              python daily_horoscope.py --preview
+              python daily_horoscope.py --preview --preview-days "$PREVIEW_DAYS"
             fi
           else
             python daily_horoscope.py
@@ -60,4 +68,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: horoscope-preview
-          path: preview.md
+          path: |
+            preview.md
+            preview-data.json
+            preview-report.md
