@@ -178,7 +178,7 @@ def generate_bundle(day, history):
     key = ''.join(os.environ.get('OPENAI_API_KEY', '').split())
     if not key:
         raise RuntimeError('Добавьте OPENAI_API_KEY в GitHub Actions Secrets.')
-    model = os.environ.get('OPENAI_MODEL', 'gpt-5-mini')
+    model = os.environ.get('OPENAI_MODEL', 'gpt-5.4')
     if not re.fullmatch(r'[a-zA-Z0-9_./-]+', model):
         raise RuntimeError('Недопустимое имя модели.')
     history = [item for item in history if item['date'] < day.isoformat()][-7:]
