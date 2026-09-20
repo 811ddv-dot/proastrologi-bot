@@ -1,50 +1,117 @@
+import copy
+import contextlib
+import io
 import os
+import tempfile
 import unittest
 from datetime import date
+from pathlib import Path
 from unittest.mock import patch
 
 import daily_horoscope as bot
 
 
+def sample_plan():
+    # Deliberately distinct tokens: these fixtures test contracts, not literary quality.
+    labels = 'встреча отдых учёба дружба семья деньги работа свобода поездка выбор успех терпение'.split()
+    return {sign: {'domain': bot.DOMAINS[i % 8], 'mood': bot.MOODS[i % 4],
+                   'situation': labels[i], 'turn': labels[i] + ' развитие',
+                   'ending': labels[i] + ' итог'}
+            for i, sign in enumerate(bot.SIGNS)}
+
+
 class EditorialTests(unittest.TestCase):
-    def test_invalid_review_does_not_approve(self):
-        for value in ({}, {'issues': 'none'}, {'issues': [{}]}, {'issues': [{'sign': 'unknown'}]}):
+    def test_plan_needs_all_signs(self):
+        plan = sample_plan()
+        plan.pop('Овен')
+        with self.assertRaises(ValueError):
+            bot.validate_plan(plan, [])
+
+    def test_plan_diversity(self):
+        bot.validate_plan(sample_plan(), [])
+        for field, value in [('mood', bot.MOODS[0]), ('domain', bot.DOMAINS[0])]:
+            plan = sample_plan()
+            for item in plan.values():
+                item[field] = value
             with self.assertRaises(ValueError):
-                bot.review_issues(value)
-        self.assertEqual(bot.review_issues({'issues': []}), [])
+                bot.validate_plan(plan, [])
 
-    def test_only_flagged_sign_rewritten_then_validated(self):
-        edition = {sign: 'original ' + sign for sign in bot.SIGNS}
-        issue = {'sign': 'Овен', 'evidence': 'Повтор смысла с Тельцом', 'fix': 'Измени центральную тему'}
-        history = [{'date': '2026-09-20', 'forecasts': edition}]
-        with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
-                patch.object(bot, 'read_history', return_value=history), \
-                patch.object(bot, 'validate', side_effect=lambda x: x) as validate, \
-                patch.object(bot, 'validate_originality'), \
-                patch.object(bot, 'model_json', side_effect=[edition, {'issues': [issue]},
-                                                           {'Овен': 'repaired'}]) as model:
-            result = bot.generate(date(2026, 9, 21))
-        self.assertEqual(result['Овен'], 'repaired')
-        self.assertEqual(result['Телец'], edition['Телец'])
-        self.assertEqual(model.call_args_list[2].args[3]['repair_signs'], ['Овен'])
-        self.assertEqual(model.call_args_list[2].args[3]['history'], history)
-        self.assertEqual(validate.call_args.args[0], result)
-        self.assertEqual(model.call_count, 3)
+    def test_plan_history_repetition_rejected(self):
+        plan = sample_plan()
+        with self.assertRaisesRegex(ValueError, 'повторяет'):
+            bot.validate_plan(plan, [{'date': '2026-09-20', 'plan': plan}])
 
-    def test_persistent_validation_failure_never_returns_edition(self):
-        edition = {sign: 'original ' + sign for sign in bot.SIGNS}
-        issue = {'sign': 'Овен', 'evidence': 'Повтор', 'fix': 'Перепиши'}
-        responses = [edition, {'issues': []}, {'Овен': 'v2'}, {'Овен': 'v3'}, {'Овен': 'v4'}]
+    def test_separate_planning_writing_and_language_editor(self):
+        plan = sample_plan()
+        draft = {sign: 'draft' for sign in bot.SIGNS}
+        edited = {sign: 'edited' for sign in bot.SIGNS}
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
-                patch.object(bot, 'read_history', return_value=[]), \
-                patch.object(bot, 'validate', side_effect=ValueError('Овен: повтор')), \
-                patch.object(bot, 'validate_originality'), \
-                patch.object(bot, 'model_json', side_effect=responses):
+                patch.object(bot, 'validate'), patch.object(bot, 'validate_originality'), \
+                patch.object(bot, 'validate_language'), \
+                patch.object(bot, 'model_json', side_effect=[plan, draft, edited]) as model:
+            result = bot.generate_bundle(date(2026, 9, 21), [])
+        self.assertEqual(result['forecasts'], edited)
+        self.assertEqual(result['plan'], plan)
+        self.assertEqual(model.call_args_list[0].args[2], bot.PLAN_PROMPT)
+        self.assertEqual(model.call_args_list[1].args[2], bot.WRITE_PROMPT)
+        self.assertEqual(model.call_args_list[2].args[2], bot.LANGUAGE_PROMPT)
+        self.assertEqual(model.call_args_list[2].args[3]['edition'], draft)
+
+    def test_bad_language_retried_without_replanning(self):
+        plan = sample_plan()
+        edition = {sign: 'text' for sign in bot.SIGNS}
+        with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
+                patch.object(bot, 'validate'), patch.object(bot, 'validate_originality'), \
+                patch.object(bot, 'validate_language', side_effect=[ValueError('Овен: канцеляризм'), None]), \
+                patch.object(bot, 'model_json', side_effect=[plan, edition, edition, edition]) as model:
+            bot.generate_bundle(date(2026, 9, 21), [])
+        self.assertEqual(model.call_count, 4)
+        self.assertIn('канцеляризм', model.call_args.args[3]['validation_error'])
+
+    def test_failed_edit_never_returns_bundle(self):
+        plan = sample_plan()
+        edition = {sign: 'text' for sign in bot.SIGNS}
+        with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
+                patch.object(bot, 'validate', side_effect=ValueError('Овен: неверный текст')), \
+                patch.object(bot, 'model_json', side_effect=[plan, edition, edition, edition, edition]):
             with self.assertRaisesRegex(RuntimeError, 'Ничего не опубликовано'):
-                bot.generate(date(2026, 9, 21))
+                bot.generate_bundle(date(2026, 9, 21), [])
+
+    def test_jargon_and_example_copy_rejected(self):
+        with self.assertRaises(ValueError):
+            bot.validate_language({'Овен': 'Коммуникация требует структурирования.'})
+        with self.assertRaises(ValueError):
+            bot.validate_language({'Овен': bot.EXAMPLES[0]})
+
+    def test_three_day_preview_uses_history_without_publishing(self):
+        seen = []
+        def generate(day, history):
+            seen.append(copy.deepcopy(history))
+            return {'date': day.isoformat(), 'plan': sample_plan(),
+                    'forecasts': {sign: str(day) + sign for sign in bot.SIGNS}}
+        with tempfile.TemporaryDirectory() as folder:
+            previous = Path.cwd()
+            try:
+                os.chdir(folder)
+                state = Path(folder) / 'production-history.json'
+                state.write_text('[]')
+                with patch.object(bot, 'STATE', state), patch.object(bot, 'generate_bundle', side_effect=generate), \
+                        patch.object(bot, 'remember') as remember, patch.object(bot, 'request_json') as network:
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        bundles = bot.preview_sequence(date(2026, 9, 21), 3)
+                self.assertEqual([len(x) for x in seen], [0, 1, 2])
+                self.assertEqual(seen[2][-1]['date'], '2026-09-22')
+                self.assertEqual(state.read_text(), '[]')
+                self.assertEqual(len(bundles), 3)
+                self.assertTrue(Path('preview.md').exists())
+                self.assertTrue(Path('preview-report.md').exists())
+                remember.assert_not_called()
+                network.assert_not_called()
+            finally:
+                os.chdir(previous)
 
     def test_verbatim_history_rejected(self):
-        edition = {sign: ('договорённости изменились и стоит обсудить условия снова ' + sign)
+        edition = {sign: 'договорённости изменились и стоит обсудить условия снова ' + sign
                    for sign in bot.SIGNS}
         with self.assertRaises(ValueError):
             bot.validate_originality(edition, [{'date': '2026-09-20', 'forecasts': edition}])

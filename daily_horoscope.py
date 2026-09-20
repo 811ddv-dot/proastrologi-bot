@@ -8,7 +8,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from itertools import combinations
 from pathlib import Path
 from difflib import SequenceMatcher
@@ -16,74 +16,7 @@ from zoneinfo import ZoneInfo
 
 SIGNS = dict(zip('Овен Телец Близнецы Рак Лев Дева Весы Скорпион Стрелец Козерог Водолей Рыбы'.split(), '♈♉♊♋♌♍♎♏♐♑♒♓'))
 MONTHS = 'января февраля марта апреля мая июня июля августа сентября октября ноября декабря'.split()
-PROMPT = '''Ты автор оригинального развлекательного ежедневного гороскопа.
-Напиши общий прогноз для каждого из 12 знаков на переданную дату.
-Формат: один абзац, 65–95 слов, 4–6 предложений на знак, обращение на «вы».
-
-Главное — связная мысль и различие содержания, а не украшения.
-Дай каждому знаку собственный характер дня и центральную тему. Развивай её:
-какие обстоятельства вероятны и как они могут изменить дела или общение.
-Не сравнивай в каждом тексте, что даётся легче, а что сложнее. Нужен прогноз, не оценка навыков.
-Допустим один уместный совет, не цепочка наставлений.
-В выпуске должны быть разные настроения: благоприятное, сдержанное, неоднозначное.
-Не закрепляй настроение или жизненную сферу за знаком навсегда.
-
-Это общий прогноз, НЕ рассказ о заранее известных действиях читателя.
-Не выдумывай точные звонки, найденные предметы, поломки, транспорт, еду, места встреч.
-Предпочитай узнаваемые ситуации без реквизита: изменение договорённостей, разница
-в ожиданиях, возможность проявить себя, пересмотр отношения к человеку.
-Не вставляй эти примеры по очереди; находи собственные разные темы.
-Не обещай, что событие обязательно случится. Не начинай каждое предложение с «возможно».
-Пиши живым грамотным русским, без делового жаргона, туманных метафор и психотерапевтических лозунгов.
-Не заполняй объём словами «небольшой», «простой», «полезный», «ясность» и оптимистичной моралью.
-Не обязан давать совет: предпочтительнее описать, как могут сложиться обстоятельства.
-Хотя бы половина абзацев должна обходиться без повелительных форм и наставлений.
-Не используй фразы «тема дня», «совет:», «личные границы», «перераспределение обязанностей».
-Не делай весь выпуск про согласование условий, рабочую нагрузку и реализацию идей.
-Различай сюжеты на уровне человеческих переживаний и обстоятельств, а не названий сфер.
-Не соединяй несвязанные события в одном абзаце и не делай все концовки одинаковыми.
-Избегай «концептуальные предложения», «генерация концепций», «ситуационные проекты»,
-«тактическое преимущество», «устойчивая система», «измеримый план»: это не деловой отчёт.
-Ориентир качества языка (не копируй эти фразы и сюжеты):
-«Не всё получится решить с первой попытки, однако день может оказаться удачнее,
-чем покажется поначалу. Поддержка вероятна со стороны человека, с которым вы редко
-совпадаете во мнениях. Зато в привычных делах лучше полагаться на собственный опыт:
-чужие подсказки сейчас могут только запутать».
-«Поводов для волнения будет меньше, чем вы ожидаете. Разногласия, которые казались
-серьёзными, отступят, когда появится общая цель. Не исключены приятные новости от тех,
-с кем вы давно не общались. День оставит ощущение, что многое наконец встаёт на свои места».
-Это образцы интонации, НЕ готовые прогнозы. Не делай все тексты похожими на них.
-Характер знака может влиять на реакцию, но не подменяет прогноз описанием личности.
-
-Переданная история — только материал для сравнения, не пример для подражания.
-Не повторяй смысловую связку «ситуация — развитие — совет» из истории или другого знака.
-Общая сфера вроде работы может совпасть; центральная мысль и поворот должны различаться.
-Не копируй и не пересказывай чужие гороскопы. Не заявляй о расчёте планет.
-Без утра и вечера, рубрик, списков, разметки, эмодзи внутри текста.
-Без медицинских/инвестиционных советов, запугивания и обещаний дохода.
-Верни только JSON: 12 русских названий знаков — тексты.
-'''
-
-REVIEW_PROMPT = '''Ты независимый выпускающий редактор. Оцени готовый выпуск по требованиям.
-Сравни ВСЕ пары знаков и каждый текст с историей: разные слова не устраняют одинаковый смысл.
-Отклоняй конкретные дефекты:
-1. Повтор центральной ситуации, её развития и вывода у разных знаков или в истории.
-2. Перечень несвязанных бытовых происшествий, выдуманные точные действия/предметы вместо общего прогноза.
-3. Одинаковое настроение и композиция большинства текстов; советы вместо прогноза.
-4. Неестественные фразы, канцелярит или пустая мораль.
-Не отклоняй только за общую сферу (работа, отношения) или общие служебные слова.
-Близкие советы сами по себе НЕ дубль: для смыслового повтора должны совпасть одновременно
-центральная ситуация, её развитие и вывод. Разные причины и последствия общения — разные сюжеты.
-Отмечай только существенные дефекты, а не необязательные стилистические предпочтения.
-Не требуй литературного совершенства. Для каждого дефекта укажи знак, короткую цитату
-и конкретную инструкцию исправления; для повтора также сравниваемый знак/дату.
-Предлагай простые человеческие ситуации, не бизнес-процессы, роли модератора,
-реструктуризацию, масштабирование или форматы отчётности. Не вводи новые требования.
-Верни JSON {"issues": [{"sign": "Овен", "evidence": "цитата и сопоставление", "fix": "что изменить"}]}.
-Поле sign содержит ровно один ключ из edition, в именительном падеже. Для нескольких знаков
-создай отдельные замечания. Не используй «все знаки», «Девы», «Козероги» или объединённые названия.
-Если конкретных дефектов нет, верни {"issues": []}. Не переписывай тексты.
-'''
+from editorial import DOMAINS, MOODS, EXAMPLES, PLAN_PROMPT, WRITE_PROMPT, LANGUAGE_PROMPT
 
 STATE = Path('horoscope-state/history.json')
 
@@ -97,9 +30,9 @@ def read_history():
     return history[-7:]
 
 
-def remember(day, edition):
-    history = [item for item in read_history() if item['date'] != day.isoformat()]
-    history.append({'date': day.isoformat(), 'forecasts': edition})
+def remember(bundle):
+    history = [item for item in read_history() if item['date'] != bundle['date']]
+    history.append(bundle)
     STATE.parent.mkdir(parents=True, exist_ok=True)
     temporary = STATE.with_suffix('.tmp')
     temporary.write_text(json.dumps(history[-7:], ensure_ascii=False, indent=2), encoding='utf-8')
@@ -143,8 +76,11 @@ def validate(edition):
     if not isinstance(edition, dict) or set(edition) != set(SIGNS):
         raise ValueError('Нужны ровно 12 знаков без пропусков.')
     for sign, body in edition.items():
-        if not isinstance(body, str) or not 45 <= len(words(body)) <= 110:
+        if not isinstance(body, str) or not 55 <= len(words(body)) <= 100:
             raise ValueError(f'{sign}: неподходящая длина прогноза.')
+        sentences = [part for part in re.split(r'[.!?]+', body) if part.strip()]
+        if not 4 <= len(sentences) <= 6:
+            raise ValueError(f'{sign}: нужно 4–6 предложений.')
         if any(x in body for x in ('\n', '\r', '#', '<', '>', '*')):
             raise ValueError(f'{sign}: нужен один абзац без разметки.')
         if re.search(r'\b(утр(?:о|а|ом|у|ен\w*)|вечер(?:а|ом|у|е|ний|няя|нее|ние)?)\b', body.lower()):
@@ -172,16 +108,6 @@ def clean_labels(edition):
     return edition
 
 
-def review_issues(review):
-    if not isinstance(review, dict) or not isinstance(review.get('issues'), list):
-        raise ValueError('Редактор не вернул список замечаний.')
-    issues = review['issues']
-    for issue in issues:
-        if (not isinstance(issue, dict) or issue.get('sign') not in SIGNS
-                or not isinstance(issue.get('evidence'), str) or not issue['evidence'].strip()
-                or not isinstance(issue.get('fix'), str) or not issue['fix'].strip()):
-            raise ValueError('Некорректное замечание редактора.')
-    return issues
 
 
 def request_json(url, payload, headers=None):
@@ -197,99 +123,149 @@ def request_json(url, payload, headers=None):
         raise RuntimeError('Сервис не ответил. Автоматический повтор отправки отключён во избежание дублей.') from None
 
 
-def generate(day):
-    # Some browser password managers copy a displayed key with line breaks.
-    # API keys never contain whitespace, so normalize it before building the header.
+def validate_plan(plan, history):
+    if not isinstance(plan, dict) or set(plan) != set(SIGNS):
+        raise ValueError('План должен содержать ровно 12 знаков.')
+    for sign, item in plan.items():
+        if not isinstance(item, dict):
+            raise ValueError(f'{sign}: некорректный план.')
+        if item.get('domain') not in DOMAINS or item.get('mood') not in MOODS:
+            raise ValueError(f'{sign}: неизвестная сфера или настроение.')
+        for field in ('situation', 'turn', 'ending'):
+            if not isinstance(item.get(field), str) or not item[field].strip():
+                raise ValueError(f'{sign}: нет поля {field}.')
+    domains = [item['domain'] for item in plan.values()]
+    moods = [item['mood'] for item in plan.values()]
+    if len(set(domains)) < 6 or max(domains.count(x) for x in domains) > 3:
+        raise ValueError('Недостаточно разных сфер: нужно минимум 6, не больше 3 знаков на сферу.')
+    if len(set(moods)) < 3 or max(moods.count(x) for x in moods) > 5:
+        raise ValueError('Недостаточно разных настроений: минимум 3, максимум 5 знаков на настроение.')
+    def story(item):
+        return words(' '.join(item[field] for field in ('situation', 'turn', 'ending')))
+    for a, b in combinations(plan, 2):
+        if SequenceMatcher(None, story(plan[a]), story(plan[b])).ratio() > .65:
+            raise ValueError(f'Повтор сюжета в плане: {a}, {b}.')
+    for past in history:
+        for sign, item in past.get('plan', {}).items():
+            if sign in plan and SequenceMatcher(None, story(plan[sign]), story(item)).ratio() > .65:
+                raise ValueError(f'{sign}: план повторяет {past["date"]}.')
+    return plan
+
+
+def generate_bundle(day, history):
     key = ''.join(os.environ.get('OPENAI_API_KEY', '').split())
     if not key:
-        raise RuntimeError('Добавьте OPENAI_API_KEY в GitHub Actions Secrets. Старые тексты повторно не публикуются.')
+        raise RuntimeError('Добавьте OPENAI_API_KEY в GitHub Actions Secrets.')
     model = os.environ.get('OPENAI_MODEL', 'gpt-5-mini')
     if not re.fullmatch(r'[a-zA-Z0-9_./-]+', model):
         raise RuntimeError('Недопустимое имя модели.')
-    history = [item for item in read_history() if item['date'] < day.isoformat()]
-    feedback = []
-    edition = None
-    semantic_review_done = False
-    for attempt in range(4):
+    history = [item for item in history if item['date'] < day.isoformat()][-7:]
+    context = {'date': day.isoformat(), 'signs': list(SIGNS), 'history': history,
+               'domains': DOMAINS, 'moods': MOODS}
+    for attempt in range(3):
+        plan = model_json(key, model, PLAN_PROMPT, context)
         try:
-            if edition is None:
-                edition = model_json(key, model, PROMPT, {
-                    'date': day.isoformat(), 'signs': list(SIGNS), 'history': history,
-                    'editor_feedback': feedback})
-            else:
-                targets = list(dict.fromkeys(item['sign'] for item in feedback))
-                patches = model_json(key, model, PROMPT + '\nИсправь только знаки из repair_signs. '
-                    'Остальные тексты приведены для сравнения, их не возвращай. '
-                    'Верни JSON: только исправляемые знаки — новые абзацы.', {
-                        'date': day.isoformat(), 'edition': edition, 'history': history,
-                        'repair_signs': targets, 'editor_feedback': feedback})
-                if not isinstance(patches, dict) or set(patches) != set(targets):
-                    raise ValueError('Неполный набор исправленных знаков.')
-                edition = {**edition, **patches}
-            edition = clean_labels(edition)
-            format_issues = []
-            try:
-                validate(edition)
-                validate_originality(edition, history)
-            except ValueError as exc:
-                format_issues = [{'sign': sign, 'evidence': str(exc),
-                                  'fix': 'Исправь указанное нарушение; хорошие части оставь.'}
-                                 for sign in SIGNS if sign in str(exc)]
-                if not format_issues:
-                    format_issues = [{'sign': sign, 'evidence': str(exc),
-                                      'fix': 'Устрани нарушение формата или повтор.'} for sign in SIGNS]
-            feedback = []
-            if not semantic_review_done:
-                review_data = {'requirements': PROMPT, 'date': day.isoformat(), 'edition': edition, 'history': history}
-                review = model_json(key, model, REVIEW_PROMPT, review_data)
-                try:
-                    feedback = review_issues(review)
-                except ValueError:
-                    # Retry the review schema, not the already-written edition.
-                    review_data['invalid_review'] = review
-                    review_data['repair_request'] = 'Исправь только JSON замечаний: sign обязан точно совпадать с ключом edition.'
-                    feedback = review_issues(model_json(key, model, REVIEW_PROMPT, review_data))
-                semantic_review_done = True
-            feedback.extend(format_issues)
-            if not feedback:
-                print('Смысловая редактура завершена; формат и буквальные повторы проверены.', file=sys.stderr, flush=True)
-                return edition
-            print(f'Редактор {attempt + 1}/4: ' + json.dumps(feedback, ensure_ascii=False),
-                  file=sys.stderr, flush=True)
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
-            print(f'Проверка {attempt + 1}/4: {exc}', file=sys.stderr, flush=True)
-            feedback = [{'sign': sign, 'evidence': str(exc), 'fix': 'Исправь нарушение формата или повтор.'}
-                        for sign in SIGNS]
-            if not isinstance(edition, dict) or set(edition) != set(SIGNS):
-                edition = None
-                semantic_review_done = False
-    raise RuntimeError('Выпуск не прошёл проверку после четырёх попыток. Ничего не опубликовано.')
+            validate_plan(plan, history)
+            break
+        except (ValueError, TypeError, KeyError) as exc:
+            context['previous_plan'] = plan
+            context['validation_error'] = str(exc)
+            print(f'План {attempt + 1}/3: {exc}', file=sys.stderr, flush=True)
+    else:
+        raise RuntimeError('Не удалось подготовить разнообразный план. Ничего не опубликовано.')
+    print(f'{day}: план готов; сфер {len(set(x["domain"] for x in plan.values()))}, '
+          f'настроений {len(set(x["mood"] for x in plan.values()))}; история {len(history)} дней.',
+          file=sys.stderr, flush=True)
+    draft = model_json(key, model, WRITE_PROMPT, {
+        'date': day.isoformat(), 'plan': plan, 'examples': EXAMPLES, 'history': history})
+    editorial_input = {'date': day.isoformat(), 'plan': plan, 'edition': draft,
+                       'examples': EXAMPLES, 'history': history}
+    for attempt in range(3):
+        edition = clean_labels(model_json(key, model, LANGUAGE_PROMPT, editorial_input))
+        try:
+            validate(edition)
+            validate_originality(edition, history)
+            validate_language(edition)
+            break
+        except (ValueError, TypeError, KeyError) as exc:
+            editorial_input['edition'] = edition
+            editorial_input['validation_error'] = str(exc)
+            print(f'Язык/формат {attempt + 1}/3: {exc}', file=sys.stderr, flush=True)
+    else:
+        raise RuntimeError('Редактура не прошла проверку. Ничего не опубликовано.')
+    print(f'{day}: написание и отдельная языковая редактура завершены.', file=sys.stderr, flush=True)
+    return {'date': day.isoformat(), 'plan': plan, 'forecasts': edition}
+
+
+def validate_language(edition):
+    jargon = r'адаптивн|реструктур|структурирован|коммуникаци|взаимодейств|переформат|сфокусирован|ресурс|концепц|интуитивные наработки|эмоциональная составляющая'
+    for sign, body in edition.items():
+        found = re.search(jargon, body.lower())
+        if found:
+            raise ValueError(f'{sign}: замени канцеляризм «{found.group()}» естественной фразой.')
+        sentences = [x.strip().lower() for x in re.split(r'[.!?]+', body) if x.strip()]
+        if len(sentences) != len(set(sentences)):
+            raise ValueError(f'{sign}: повтор предложения.')
+        for example in EXAMPLES:
+            if grams(body, 7) & grams(example, 7):
+                raise ValueError(f'{sign}: скопирована фраза из образца; напиши оригинально.')
+    return edition
 
 
 def format_post(day, sign, body):
     return f'<b>{SIGNS[sign]} {sign.upper()} — {day.day} {MONTHS[day.month - 1]}</b>\n\n{html.escape(body)}'
 
 
+def preview_sequence(day, count):
+    # Only an in-memory copy is extended. Publication state is never written here.
+    history = [item for item in read_history() if item['date'] < day.isoformat()]
+    bundles = []
+    sections = ['# Тестовые выпуски\n\nНе отправлены в Telegram. Тексты без ручной редакции.']
+    for offset in range(count):
+        current = day + timedelta(days=offset)
+        bundle = generate_bundle(current, history)
+        bundles.append(bundle)
+        history = (history + [bundle])[-7:]
+        sections.append(f'## {current.isoformat()}')
+        for sign in SIGNS:
+            sections.append(f'### {SIGNS[sign]} {sign}\n\n{bundle["forecasts"][sign]}')
+        print(f'Предпросмотр: {current}, 12 знаков; тестовая история {len(history)} дней.', flush=True)
+    Path('preview.md').write_text('\n\n'.join(sections) + '\n', encoding='utf-8')
+    Path('preview-data.json').write_text(json.dumps(bundles, ensure_ascii=False, indent=2), encoding='utf-8')
+    rows = ['# Проверка последовательных выпусков', '', '| Дата | Знак | Сфера | Настроение |',
+            '|---|---|---|---|']
+    for bundle in bundles:
+        for sign, plan in bundle['plan'].items():
+            rows.append(f'| {bundle["date"]} | {sign} | {plan["domain"]} | {plan["mood"]} |')
+    rows += ['', 'Во всех выпусках проверены состав знаков, длина, абзацы, повторяющиеся фразы, '
+             'сходство с предыдущими выпусками, заданные канцеляризмы и копирование образцов. '
+             'Проверка слов не является гарантией смысловой уникальности; смысл учитывается планировщиком и редактором.']
+    Path('preview-report.md').write_text('\n'.join(rows) + '\n', encoding='utf-8')
+    print('\n\n'.join(sections), flush=True)
+    return bundles
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--preview', action='store_true', help='Показать выпуск без отправки в Telegram')
     parser.add_argument('--date', type=date.fromisoformat, help='Дата только для предпросмотра')
-    parser.add_argument('--remember-preview', action='store_true', help='Сохранить предпросмотр в отдельную тестовую историю')
+    parser.add_argument('--preview-days', type=int, default=1, choices=range(1, 4),
+                        help='От 1 до 3 последовательных тестовых дней; без записи истории публикаций')
     args = parser.parse_args()
     if args.date and not args.preview:
         parser.error('--date разрешён только вместе с --preview')
+    if args.preview_days != 1 and not args.preview:
+        parser.error('--preview-days разрешён только вместе с --preview')
     day = args.date or datetime.now(ZoneInfo('Europe/Moscow')).date()
+    if args.preview:
+        preview_sequence(day, args.preview_days)
+        return
     if not args.preview and any(item['date'] == day.isoformat() for item in read_history()):
         print('Выпуск на эту дату уже отправлен. Повтор пропущен.')
         return
-    edition = generate(day)  # Validate all 12 before sending even the first post.
+    bundle = generate_bundle(day, read_history())
+    edition = bundle['forecasts']  # Validate all 12 before sending even the first post.
     posts = [format_post(day, sign, edition[sign]) for sign in SIGNS]
-    if args.preview:
-        Path('preview.md').write_text('\n\n'.join(post.replace('<b>', '**').replace('</b>', '**') for post in posts), encoding='utf-8')
-        if args.remember_preview:
-            remember(day, edition)
-        print('\n\n'.join(posts))
-        return
     token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
     if not token:
         raise RuntimeError('Не задан TELEGRAM_BOT_TOKEN.')
@@ -301,7 +277,7 @@ def main():
             raise RuntimeError(f'Telegram отклонил сообщение {index}; остановка без повторной отправки.')
         print(f'Отправлено {index}/12; message_id={response["result"]["message_id"]}', flush=True)
         time.sleep(1)
-    remember(day, edition)
+    remember(bundle)
 
 
 if __name__ == '__main__':
