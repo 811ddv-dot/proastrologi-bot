@@ -1,0 +1,44 @@
+name: Publish approved September 20 post
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: daily-horoscope
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test publication guards
+        run: python -m unittest -v
+      - uses: actions/cache/restore@v4
+        with:
+          path: horoscope-state
+          key: horoscope-history-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: horoscope-history-
+      - name: Download exactly the approved preview
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: '10602581637'
+          run-id: '35501068209'
+          github-token: ${{ github.token }}
+          path: approved-preview
+      - name: Publish one approved post without regeneration
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.PROASTROLOGI }}
+          TELEGRAM_CHANNEL: '@proastrologi'
+        run: python publish_approved.py
+      - name: Preserve publication history
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: horoscope-state
+          key: horoscope-history-${{ github.run_id }}-${{ github.run_attempt }}
