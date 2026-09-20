@@ -21,6 +21,66 @@ def sample_plan():
 
 
 class EditorialTests(unittest.TestCase):
+    def test_one_post_contains_all_signs_and_single_date(self):
+        edition = {sign: 'Текст & смысл.' for sign in bot.SIGNS}
+        post = bot.format_edition(date(2026, 9, 21), edition)
+        self.assertEqual(post.count('21 сентября'), 1)
+        self.assertEqual(post.count('<b>'), 13)
+        self.assertIn('Текст &amp; смысл.', post)
+        for sign in bot.SIGNS:
+            self.assertEqual(post.count(sign.upper()), 1)
+
+    def test_max_sign_lengths_fit_even_long_month(self):
+        edition = {sign: 'а' * bot.MAX_SIGN_LENGTH for sign in bot.SIGNS}
+        post = bot.format_edition(date(2026, 9, 30), edition, markup=False)
+        self.assertLessEqual(bot.text_length(post), bot.TELEGRAM_LIMIT)
+
+    def test_total_length_boundary_and_utf16(self):
+        edition = {sign: 'а' for sign in bot.SIGNS}
+        count = bot.text_length(bot.format_edition(date(2026, 9, 21), edition, markup=False))
+        edition['Овен'] += 'а' * (4096 - count)
+        self.assertEqual(bot.text_length(bot.format_edition(date(2026, 9, 21), edition, markup=False)), 4096)
+        edition['Овен'] += 'а'
+        with self.assertRaises(ValueError):
+            bot.format_edition(date(2026, 9, 21), edition)
+        self.assertEqual(bot.text_length('🌟'), 2)
+
+    def test_publish_sends_once_then_remembers(self):
+        bundle = {'date': '2026-09-21', 'forecasts': {sign: 'Готовый абзац.' for sign in bot.SIGNS}}
+        with patch.dict(os.environ, {'TELEGRAM_BOT_TOKEN': 'test'}), \
+                patch.object(bot, 'request_json', return_value={'ok': True, 'result': {'message_id': 42}}) as send, \
+                patch.object(bot, 'remember') as remember:
+            bot.publish_bundle(date(2026, 9, 21), bundle)
+        send.assert_called_once()
+        remember.assert_called_once_with(bundle)
+        self.assertEqual(send.call_args.args[1]['text'].count('<b>'), 13)
+
+    def test_invalid_post_never_sent(self):
+        for edition in ({'Овен': 'Текст.'}, {sign: 'а' * 500 for sign in bot.SIGNS}):
+            with patch.object(bot, 'request_json') as send, patch.object(bot, 'remember') as remember:
+                with self.assertRaises(ValueError):
+                    bot.publish_bundle(date(2026, 9, 21), {'forecasts': edition})
+                send.assert_not_called()
+                remember.assert_not_called()
+
+    def test_failed_send_not_retried_or_remembered(self):
+        bundle = {'forecasts': {sign: 'Текст.' for sign in bot.SIGNS}}
+        with patch.dict(os.environ, {'TELEGRAM_BOT_TOKEN': 'test'}), \
+                patch.object(bot, 'request_json', return_value={'ok': False}) as send, \
+                patch.object(bot, 'remember') as remember:
+            with self.assertRaises(RuntimeError):
+                bot.publish_bundle(date(2026, 9, 21), bundle)
+            send.assert_called_once()
+            remember.assert_not_called()
+
+    def test_compact_paragraph_limits(self):
+        body = ('Сегодня станет проще вернуться к делу, которое долго не двигалось с места. '
+                'Чужой опыт поможет заметить удачное решение и избежать лишней спешки. '
+                'Не берите на себя новые обещания, пока не закончите начатое.')
+        bot.validate({'Овен': body}, require_all=False)
+        with self.assertRaises(ValueError):
+            bot.validate({'Овен': body + ' Оченьдлинно' * 15}, require_all=False)
+
     def test_selected_model_is_sent_and_usage_contains_no_key(self):
         response = {'model': 'gpt-5.4', 'usage': {'prompt_tokens': 100, 'completion_tokens': 20},
                     'choices': [{'finish_reason': 'stop', 'message': {'content': '{}'}}]}

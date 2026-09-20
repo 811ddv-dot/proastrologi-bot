@@ -5,7 +5,6 @@ import json
 import os
 import re
 import sys
-import time
 import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta
@@ -19,6 +18,13 @@ MONTHS = 'января февраля марта апреля мая июня и
 from editorial import DOMAINS, MOODS, EXAMPLES, PLAN_PROMPT, WRITE_PROMPT, LANGUAGE_PROMPT, QUALITY_PROMPT
 
 STATE = Path('horoscope-state/history.json')
+TELEGRAM_LIMIT = 4096
+MAX_SIGN_LENGTH = 310
+
+
+def text_length(text):
+    # Conservative UTF-16 count also accounts for supplementary-plane emoji.
+    return len(text.encode('utf-16-le')) // 2
 
 
 def read_history():
@@ -86,11 +92,13 @@ def validate(edition, require_all=True):
     if not isinstance(edition, dict) or (require_all and set(edition) != set(SIGNS)):
         raise ValueError('Нужны ровно 12 знаков без пропусков.')
     for sign, body in edition.items():
-        if not isinstance(body, str) or not 55 <= len(words(body)) <= 100:
-            raise ValueError(f'{sign}: неподходящая длина прогноза.')
+        if not isinstance(body, str) or not 25 <= len(words(body)) <= 50:
+            raise ValueError(f'{sign}: нужно 25–50 слов в коротком абзаце.')
+        if text_length(body) > MAX_SIGN_LENGTH:
+            raise ValueError(f'{sign}: {text_length(body)} символов, сократи до 310, не обрывая предложения.')
         sentences = [part for part in re.split(r'[.!?]+', body) if part.strip()]
-        if not 4 <= len(sentences) <= 6:
-            raise ValueError(f'{sign}: нужно 4–6 предложений.')
+        if not 3 <= len(sentences) <= 4:
+            raise ValueError(f'{sign}: нужно 3–4 предложения.')
         if any(x in body for x in ('\n', '\r', '#', '<', '>', '*')):
             raise ValueError(f'{sign}: нужен один абзац без разметки.')
         if re.search(r'\b(утр(?:о|а|ом|у|ен\w*)|вечер(?:а|ом|у|е|ний|няя|нее|ние)?)\b', body.lower()):
@@ -266,8 +274,38 @@ def edition_issues(edition, history):
     return issues
 
 
-def format_post(day, sign, body):
-    return f'<b>{SIGNS[sign]} {sign.upper()} — {day.day} {MONTHS[day.month - 1]}</b>\n\n{html.escape(body)}'
+def format_edition(day, edition, markup=True):
+    if not isinstance(edition, dict) or set(edition) != set(SIGNS):
+        raise ValueError('Для общего поста нужны все 12 знаков.')
+    title = f'✨ Гороскоп на {day.day} {MONTHS[day.month - 1]}'
+    plain = [title]
+    formatted = [f'<b>{title}</b>']
+    for sign, icon in SIGNS.items():
+        body = edition[sign]
+        if not isinstance(body, str) or not body.strip():
+            raise ValueError(f'{sign}: пустой текст в общем посте.')
+        heading = f'{icon} {sign.upper()}'
+        plain.append(f'{heading}\n{body}')
+        formatted.append(f'<b>{heading}</b>\n{html.escape(body)}')
+    visible = '\n\n'.join(plain)
+    if text_length(visible) > TELEGRAM_LIMIT:
+        raise ValueError(f'Общий пост: {text_length(visible)} символов, лимит {TELEGRAM_LIMIT}. Ничего не отправлено.')
+    return '\n\n'.join(formatted) if markup else visible
+
+
+def publish_bundle(day, bundle):
+    # Validate the entire message before making the single Telegram request.
+    post = format_edition(day, bundle['forecasts'])
+    token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
+    if not token:
+        raise RuntimeError('Не задан TELEGRAM_BOT_TOKEN.')
+    response = request_json(f'https://api.telegram.org/bot{token}/sendMessage',
+                            {'chat_id': os.environ.get('TELEGRAM_CHANNEL', '@proastrologi'),
+                             'text': post, 'parse_mode': 'HTML'})
+    if not response.get('ok'):
+        raise RuntimeError('Telegram отклонил общий пост; остановка без повторной отправки.')
+    print(f'Отправлен 1 пост, 12 знаков; message_id={response["result"]["message_id"]}', flush=True)
+    remember(bundle)
 
 
 def preview_sequence(day, count):
@@ -278,6 +316,10 @@ def preview_sequence(day, count):
     for offset in range(count):
         current = day + timedelta(days=offset)
         bundle = generate_bundle(current, history)
+        post_text = format_edition(current, bundle['forecasts'], markup=False)
+        post_html = format_edition(current, bundle['forecasts'])
+        Path(f'preview-post-{current}.txt').write_text(post_text + '\n', encoding='utf-8')
+        Path(f'preview-post-{current}.html').write_text(post_html, encoding='utf-8')
         bundles.append(bundle)
         history = (history + [bundle])[-7:]
         sections.append(f'## {current.isoformat()}')
@@ -286,7 +328,8 @@ def preview_sequence(day, count):
         # Checkpoint only completed, validated test days, outside production state.
         Path('preview.md').write_text('\n\n'.join(sections) + '\n', encoding='utf-8')
         Path('preview-data.json').write_text(json.dumps(bundles, ensure_ascii=False, indent=2), encoding='utf-8')
-        print(f'Предпросмотр: {current}, 12 знаков; тестовая история {len(history)} дней.', flush=True)
+        print(f'Предпросмотр: {current}, 1 пост, 12 знаков, {text_length(post_text)}/{TELEGRAM_LIMIT} символов; '
+              f'тестовая история {len(history)} дней.', flush=True)
     Path('preview.md').write_text('\n\n'.join(sections) + '\n', encoding='utf-8')
     Path('preview-data.json').write_text(json.dumps(bundles, ensure_ascii=False, indent=2), encoding='utf-8')
     rows = ['# Проверка последовательных выпусков', '', '| Дата | Знак | Сфера | Настроение |',
@@ -321,20 +364,7 @@ def main():
         print('Выпуск на эту дату уже отправлен. Повтор пропущен.')
         return
     bundle = generate_bundle(day, read_history())
-    edition = bundle['forecasts']  # Validate all 12 before sending even the first post.
-    posts = [format_post(day, sign, edition[sign]) for sign in SIGNS]
-    token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
-    if not token:
-        raise RuntimeError('Не задан TELEGRAM_BOT_TOKEN.')
-    for index, post in enumerate(posts, 1):
-        response = request_json(f'https://api.telegram.org/bot{token}/sendMessage',
-                                {'chat_id': os.environ.get('TELEGRAM_CHANNEL', '@proastrologi'),
-                                 'text': post, 'parse_mode': 'HTML'})
-        if not response.get('ok'):
-            raise RuntimeError(f'Telegram отклонил сообщение {index}; остановка без повторной отправки.')
-        print(f'Отправлено {index}/12; message_id={response["result"]["message_id"]}', flush=True)
-        time.sleep(1)
-    remember(bundle)
+    publish_bundle(day, bundle)
 
 
 if __name__ == '__main__':
