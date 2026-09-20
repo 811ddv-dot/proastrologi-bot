@@ -64,7 +64,7 @@ jobs:
           path: horoscope-state
           key: horoscope-history-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Save readable preview
-        if: success() && github.event.inputs.preview == 'true'
+        if: always() && github.event.inputs.preview == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: horoscope-preview
