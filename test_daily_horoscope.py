@@ -13,31 +13,31 @@ class EditorialTests(unittest.TestCase):
                 bot.review_issues(value)
         self.assertEqual(bot.review_issues({'issues': []}), [])
 
-    def test_only_flagged_sign_rewritten_and_reviewed_again(self):
+    def test_only_flagged_sign_rewritten_then_validated(self):
         edition = {sign: 'original ' + sign for sign in bot.SIGNS}
         issue = {'sign': 'Овен', 'evidence': 'Повтор смысла с Тельцом', 'fix': 'Измени центральную тему'}
         history = [{'date': '2026-09-20', 'forecasts': edition}]
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
                 patch.object(bot, 'read_history', return_value=history), \
-                patch.object(bot, 'validate', side_effect=lambda x: x), \
+                patch.object(bot, 'validate', side_effect=lambda x: x) as validate, \
                 patch.object(bot, 'validate_originality'), \
                 patch.object(bot, 'model_json', side_effect=[edition, {'issues': [issue]},
-                                                           {'Овен': 'repaired'}, {'issues': []}]) as model:
+                                                           {'Овен': 'repaired'}]) as model:
             result = bot.generate(date(2026, 9, 21))
         self.assertEqual(result['Овен'], 'repaired')
         self.assertEqual(result['Телец'], edition['Телец'])
         self.assertEqual(model.call_args_list[2].args[3]['repair_signs'], ['Овен'])
-        self.assertEqual(model.call_args_list[3].args[3]['history'], history)
-        self.assertEqual(model.call_args_list[3].args[3]['edition'], result)
+        self.assertEqual(model.call_args_list[2].args[3]['history'], history)
+        self.assertEqual(validate.call_args.args[0], result)
+        self.assertEqual(model.call_count, 3)
 
-    def test_repeated_semantic_rejection_never_returns_edition(self):
+    def test_persistent_validation_failure_never_returns_edition(self):
         edition = {sign: 'original ' + sign for sign in bot.SIGNS}
         issue = {'sign': 'Овен', 'evidence': 'Повтор', 'fix': 'Перепиши'}
-        responses = [edition, {'issues': [issue]}, {'Овен': 'v2'}, {'issues': [issue]},
-                     {'Овен': 'v3'}, {'issues': [issue]}, {'Овен': 'v4'}, {'issues': [issue]}]
+        responses = [edition, {'issues': []}, {'Овен': 'v2'}, {'Овен': 'v3'}, {'Овен': 'v4'}]
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
                 patch.object(bot, 'read_history', return_value=[]), \
-                patch.object(bot, 'validate', side_effect=lambda x: x), \
+                patch.object(bot, 'validate', side_effect=ValueError('Овен: повтор')), \
                 patch.object(bot, 'validate_originality'), \
                 patch.object(bot, 'model_json', side_effect=responses):
             with self.assertRaisesRegex(RuntimeError, 'Ничего не опубликовано'):

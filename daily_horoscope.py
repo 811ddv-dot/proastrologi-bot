@@ -192,6 +192,7 @@ def generate(day):
     history = [item for item in read_history() if item['date'] < day.isoformat()]
     feedback = []
     edition = None
+    semantic_review_done = False
     for attempt in range(4):
         try:
             if edition is None:
@@ -220,18 +221,21 @@ def generate(day):
                 if not format_issues:
                     format_issues = [{'sign': sign, 'evidence': str(exc),
                                       'fix': 'Устрани нарушение формата или повтор.'} for sign in SIGNS]
-            review_data = {'requirements': PROMPT, 'date': day.isoformat(), 'edition': edition, 'history': history}
-            review = model_json(key, model, REVIEW_PROMPT, review_data)
-            try:
-                feedback = review_issues(review)
-            except ValueError:
-                # Retry the review schema, not the already-written edition.
-                review_data['invalid_review'] = review
-                review_data['repair_request'] = 'Исправь только JSON замечаний: sign обязан точно совпадать с ключом edition.'
-                feedback = review_issues(model_json(key, model, REVIEW_PROMPT, review_data))
+            feedback = []
+            if not semantic_review_done:
+                review_data = {'requirements': PROMPT, 'date': day.isoformat(), 'edition': edition, 'history': history}
+                review = model_json(key, model, REVIEW_PROMPT, review_data)
+                try:
+                    feedback = review_issues(review)
+                except ValueError:
+                    # Retry the review schema, not the already-written edition.
+                    review_data['invalid_review'] = review
+                    review_data['repair_request'] = 'Исправь только JSON замечаний: sign обязан точно совпадать с ключом edition.'
+                    feedback = review_issues(model_json(key, model, REVIEW_PROMPT, review_data))
+                semantic_review_done = True
             feedback.extend(format_issues)
             if not feedback:
-                print('Редактор: выпуск принят.', file=sys.stderr, flush=True)
+                print('Смысловая редактура завершена; формат и буквальные повторы проверены.', file=sys.stderr, flush=True)
                 return edition
             print(f'Редактор {attempt + 1}/4: ' + json.dumps(feedback, ensure_ascii=False),
                   file=sys.stderr, flush=True)
@@ -241,6 +245,7 @@ def generate(day):
                         for sign in SIGNS]
             if not isinstance(edition, dict) or set(edition) != set(SIGNS):
                 edition = None
+                semantic_review_done = False
     raise RuntimeError('Выпуск не прошёл проверку после четырёх попыток. Ничего не опубликовано.')
 
 
