@@ -165,17 +165,20 @@ def generate(day):
                 'editor_feedback': feedback}))
             validate_originality(edition, history)
             review = model_json(key, model,
-                'Ты строгий литературный редактор. Проверь выпуск по заданию. '
+                'Ты литературный редактор. Отредактируй весь выпуск по заданию. '
                 'Особенно проверь одинаковую композицию у знаков, повтор сюжетов и советов '
                 'из истории, стереотипы знаков, неестественный русский язык и избыток наставлений. '
                 'Не принимай набор психологических советов за прогноз. '
-                'Верни JSON {"approved": true/false, "issues": [конкретные замечания с названием знака]}. '
-                'Одобряй только если существенных недостатков нет.',
+                'Исправь найденные недостатки непосредственно в текстах. '
+                'Верни только JSON: названия всех 12 знаков — окончательные тексты. '
+                'В каждом тексте 65–105 слов, один абзац. Сохраняй хорошие фрагменты, '
+                'меняй повторяющиеся сюжеты и неестественные фразы.',
                 {'requirements': PROMPT, 'edition': edition, 'history': history})
-            if review.get('approved') is not True or review.get('issues') != []:
-                raise ValueError('Редактор: ' + json.dumps(review.get('issues', ['Нет одобрения']), ensure_ascii=False))
-            return edition
+            edited = validate(review)
+            validate_originality(edited, history)
+            return edited
         except (KeyError, IndexError, TypeError, ValueError) as exc:
+            print(f'Проверка {attempt + 1}/3: {exc}', file=sys.stderr, flush=True)
             feedback.append(str(exc))
     raise RuntimeError('Выпуск не прошёл проверку после трёх попыток. Ничего не опубликовано.')
 
