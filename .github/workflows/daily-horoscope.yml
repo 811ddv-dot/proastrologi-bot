@@ -5,6 +5,10 @@ on:
     - cron: "0 3 * * *" # 06:00 Moscow (UTC+3)
   workflow_dispatch:
     inputs:
+      maintenance:
+        description: "Migrate/check history and test private alerts (no generation or publication)"
+        type: boolean
+        default: false
       preview:
         description: "Preview only (no Telegram messages)"
         type: boolean
@@ -25,7 +29,7 @@ on:
         default: "gpt-5.4"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: daily-horoscope
@@ -37,6 +41,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
       - name: Test editorial pipeline without API calls
         run: python -m unittest -v
       - uses: actions/cache/restore@v4
@@ -44,7 +51,19 @@ jobs:
           path: horoscope-state
           key: horoscope-history-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: horoscope-history-
+      - name: Restore durable history (migrate existing cache if needed)
+        id: history
+        env:
+          GH_HISTORY_TOKEN: ${{ github.token }}
+        run: python history_store.py restore
+      - name: Test private alert delivery
+        if: inputs.maintenance == true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.PROASTROLOGI }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+        run: python notify_admin.py --test
       - name: Generate and validate all 12 forecasts
+        if: inputs.maintenance != true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.PROASTROLOGI }}
           TELEGRAM_CHANNEL: "@proastrologi"
@@ -65,14 +84,19 @@ jobs:
           else
             python daily_horoscope.py
           fi
-      - name: Preserve publication history
-        if: success() && github.event.inputs.preview != 'true'
+      - name: Save durable publication history
+        if: always() && steps.history.outcome == 'success' && inputs.preview != true && inputs.maintenance != true
+        env:
+          GH_HISTORY_TOKEN: ${{ github.token }}
+        run: python history_store.py save
+      - name: Preserve backup history
+        if: always() && steps.history.outcome == 'success' && inputs.preview != true && inputs.maintenance != true
         uses: actions/cache/save@v4
         with:
           path: horoscope-state
           key: horoscope-history-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Save readable preview
-        if: always() && github.event.inputs.preview == 'true'
+        if: always() && inputs.preview == true && inputs.maintenance != true
         uses: actions/upload-artifact@v4
         with:
           name: horoscope-preview
@@ -82,3 +106,9 @@ jobs:
             preview-report.md
             preview-post-*.txt
             preview-post-*.html
+      - name: Notify owner on failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.PROASTROLOGI }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+        run: python notify_admin.py
