@@ -27,6 +27,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: horoscope-state
+          key: horoscope-history-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: horoscope-history-
       - name: Generate and validate all 12 forecasts
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.PROASTROLOGI }}
@@ -44,3 +49,15 @@ jobs:
           else
             python daily_horoscope.py
           fi
+      - name: Preserve publication history
+        if: success() && github.event.inputs.preview != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: horoscope-state
+          key: horoscope-history-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Save readable preview
+        if: success() && github.event.inputs.preview == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: horoscope-preview
+          path: preview.md
