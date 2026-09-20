@@ -2,7 +2,7 @@ name: Daily horoscope
 
 on:
   schedule:
-    - cron: "17 4 * * *"
+    - cron: "0 3 * * *" # 06:00 Moscow (UTC+3)
   workflow_dispatch:
     inputs:
       preview:
@@ -22,7 +22,7 @@ on:
         description: "Model for preview only (scheduled model is unchanged)"
         type: choice
         options: ["gpt-5-mini", "gpt-5.4"]
-        default: "gpt-5-mini"
+        default: "gpt-5.4"
 
 permissions:
   contents: read
@@ -52,7 +52,8 @@ jobs:
           PREVIEW: ${{ inputs.preview }}
           PREVIEW_DATE: ${{ inputs.preview_date }}
           PREVIEW_DAYS: ${{ inputs.preview_days || '1' }}
-          PREVIEW_MODEL: ${{ inputs.preview_model || 'gpt-5-mini' }}
+          OPENAI_MODEL: "gpt-5.4"
+          PREVIEW_MODEL: ${{ inputs.preview_model || 'gpt-5.4' }}
         run: |
           if [ "$PREVIEW" = "true" ]; then
             export OPENAI_MODEL="$PREVIEW_MODEL"
