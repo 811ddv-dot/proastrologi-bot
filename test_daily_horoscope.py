@@ -59,7 +59,7 @@ class EditorialTests(unittest.TestCase):
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
                 patch.object(bot, 'validate'), patch.object(bot, 'validate_originality'), \
                 patch.object(bot, 'validate_language'), \
-                patch.object(bot, 'model_json', side_effect=[plan, draft, edited]) as model:
+                patch.object(bot, 'model_json', side_effect=[plan, draft, edited, {'issues': {}}]) as model:
             result = bot.generate_bundle(date(2026, 9, 21), [])
         self.assertEqual(result['forecasts'], edited)
         self.assertEqual(result['plan'], plan)
@@ -74,10 +74,10 @@ class EditorialTests(unittest.TestCase):
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
                 patch.object(bot, 'validate'), patch.object(bot, 'validate_originality'), \
                 patch.object(bot, 'edition_issues', side_effect=[{'Овен': ['канцеляризм']}, {}]), \
-                patch.object(bot, 'model_json', side_effect=[plan, edition, edition, edition]) as model:
+                patch.object(bot, 'model_json', side_effect=[plan, edition, edition, edition, {'issues': {}}]) as model:
             bot.generate_bundle(date(2026, 9, 21), [])
-        self.assertEqual(model.call_count, 4)
-        self.assertIn('канцеляризм', model.call_args.args[3]['validation_error']['Овен'])
+        self.assertEqual(model.call_count, 5)
+        self.assertIn('канцеляризм', model.call_args_list[3].args[3]['validation_error']['Овен'])
 
     def test_failed_edit_never_returns_bundle(self):
         plan = sample_plan()
@@ -93,7 +93,7 @@ class EditorialTests(unittest.TestCase):
         changed = {sign: 'changed ' + sign for sign in bot.SIGNS}
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
                 patch.object(bot, 'edition_issues', side_effect=[{'Овен': ['length']}, {}]), \
-                patch.object(bot, 'model_json', side_effect=[sample_plan(), edition, edition, changed]):
+                patch.object(bot, 'model_json', side_effect=[sample_plan(), edition, edition, changed, {'issues': {}}]):
             result = bot.generate_bundle(date(2026, 9, 21), [])['forecasts']
         self.assertEqual(result['Овен'], changed['Овен'])
         for sign in set(bot.SIGNS) - {'Овен'}:
@@ -102,6 +102,24 @@ class EditorialTests(unittest.TestCase):
     def test_all_invalid_signs_are_reported_together(self):
         edition = {sign: 'Слишком коротко.' for sign in bot.SIGNS}
         self.assertEqual(set(bot.edition_issues(edition, [])), set(bot.SIGNS))
+
+    def test_semantic_repetition_is_repaired(self):
+        edition = {sign: 'original ' + sign for sign in bot.SIGNS}
+        revised = {**edition, 'Рак': 'новая тема'}
+        with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
+                patch.object(bot, 'edition_issues', return_value={}), \
+                patch.object(bot, 'model_json', side_effect=[sample_plan(), edition, edition,
+                    {'issues': {'Рак': 'Повторён вчерашний смысл'}}, revised, {'issues': {}}]):
+            result = bot.generate_bundle(date(2026, 9, 21), [])
+        self.assertEqual(result['forecasts']['Рак'], 'новая тема')
+
+    def test_same_domain_as_previous_day_is_rejected(self):
+        plan = sample_plan()
+        past = copy.deepcopy(plan)
+        for item in past.values():
+            item.update(situation='прошлое', turn='другое', ending='отдельное')
+        with self.assertRaisesRegex(ValueError, 'смени основную сферу'):
+            bot.validate_plan(plan, [{'date': '2026-09-20', 'plan': past}])
 
     def test_jargon_and_example_copy_rejected(self):
         with self.assertRaises(ValueError):

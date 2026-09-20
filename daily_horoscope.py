@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 SIGNS = dict(zip('Овен Телец Близнецы Рак Лев Дева Весы Скорпион Стрелец Козерог Водолей Рыбы'.split(), '♈♉♊♋♌♍♎♏♐♑♒♓'))
 MONTHS = 'января февраля марта апреля мая июня июля августа сентября октября ноября декабря'.split()
-from editorial import DOMAINS, MOODS, EXAMPLES, PLAN_PROMPT, WRITE_PROMPT, LANGUAGE_PROMPT
+from editorial import DOMAINS, MOODS, EXAMPLES, PLAN_PROMPT, WRITE_PROMPT, LANGUAGE_PROMPT, QUALITY_PROMPT
 
 STATE = Path('horoscope-state/history.json')
 
@@ -154,6 +154,10 @@ def validate_plan(plan, history):
         for sign, item in past.get('plan', {}).items():
             if sign in plan and SequenceMatcher(None, story(plan[sign]), story(item)).ratio() > .65:
                 raise ValueError(f'{sign}: план повторяет {past["date"]}.')
+    if history:
+        for sign, item in history[-1].get('plan', {}).items():
+            if sign in plan and plan[sign]['domain'] == item.get('domain'):
+                raise ValueError(f'{sign}: смени основную сферу, вчера уже была «{item["domain"]}».')
     return plan
 
 
@@ -195,10 +199,19 @@ def generate_bundle(day, history):
             edition = candidate
         issues = edition_issues(edition, history)
         if not issues:
+            review = model_json(key, model, QUALITY_PROMPT, {'edition': edition, 'history': history})
+            if not isinstance(review, dict) or not isinstance(review.get('issues'), dict):
+                raise ValueError('Редактор вернул некорректную проверку качества.')
+            issues = review['issues']
+            if any(sign not in SIGNS or not isinstance(note, str) or not note.strip()
+                   for sign, note in issues.items()):
+                raise ValueError('Редактор вернул некорректные замечания.')
+        if not issues:
             break
         repair_signs = set(issues)
         editorial_input = {**editorial_input, 'edition': edition,
-                           'validation_error': issues, 'repair_signs': list(issues)}
+                           'validation_error': issues, 'quality_feedback': issues,
+                           'repair_signs': list(issues)}
         print(f'Язык/формат {attempt + 1}/3: {issues}', file=sys.stderr, flush=True)
     else:
         raise RuntimeError('Редактура не прошла проверку. Ничего не опубликовано.')
