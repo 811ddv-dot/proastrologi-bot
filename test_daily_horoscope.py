@@ -1,6 +1,7 @@
 import copy
 import contextlib
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -21,6 +22,20 @@ def sample_plan():
 
 
 class EditorialTests(unittest.TestCase):
+    def test_history_retains_thirty_editions(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder) / 'history.json'
+            entries = [{'date': f'2026-08-{day:02d}', 'forecasts': {}}
+                       for day in range(1, 32)]
+            state.write_text(json.dumps(entries), encoding='utf-8')
+            with patch.object(bot, 'STATE', state):
+                self.assertEqual(bot.HISTORY_LIMIT, 30)
+                self.assertEqual(bot.read_history(), entries[1:])
+                latest = {'date': '2026-09-01', 'forecasts': {}}
+                bot.remember(latest)
+                self.assertEqual(bot.read_history(), entries[2:] + [latest])
+                self.assertEqual(len(json.loads(state.read_text())), 30)
+
     def test_one_post_contains_all_signs_and_single_date(self):
         edition = {sign: 'Текст & смысл.' for sign in bot.SIGNS}
         post = bot.format_edition(date(2026, 9, 21), edition)

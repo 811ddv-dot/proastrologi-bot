@@ -18,6 +18,7 @@ MONTHS = 'января февраля марта апреля мая июня и
 from editorial import DOMAINS, MOODS, EXAMPLES, PLAN_PROMPT, WRITE_PROMPT, LANGUAGE_PROMPT, QUALITY_PROMPT
 
 STATE = Path('horoscope-state/history.json')
+HISTORY_LIMIT = 30
 TELEGRAM_LIMIT = 4096
 MAX_SIGN_LENGTH = 310
 
@@ -33,7 +34,7 @@ def read_history():
     history = json.loads(STATE.read_text(encoding='utf-8'))
     if not isinstance(history, list):
         raise ValueError('Повреждена история выпусков.')
-    return history[-7:]
+    return history[-HISTORY_LIMIT:]
 
 
 def remember(bundle):
@@ -41,7 +42,7 @@ def remember(bundle):
     history.append(bundle)
     STATE.parent.mkdir(parents=True, exist_ok=True)
     temporary = STATE.with_suffix('.tmp')
-    temporary.write_text(json.dumps(history[-7:], ensure_ascii=False, indent=2), encoding='utf-8')
+    temporary.write_text(json.dumps(history[-HISTORY_LIMIT:], ensure_ascii=False, indent=2), encoding='utf-8')
     temporary.replace(STATE)
 
 
@@ -181,7 +182,7 @@ def generate_bundle(day, history):
     model = os.environ.get('OPENAI_MODEL', 'gpt-5.4')
     if not re.fullmatch(r'[a-zA-Z0-9_./-]+', model):
         raise RuntimeError('Недопустимое имя модели.')
-    history = [item for item in history if item['date'] < day.isoformat()][-7:]
+    history = [item for item in history if item['date'] < day.isoformat()][-HISTORY_LIMIT:]
     context = {'date': day.isoformat(), 'signs': list(SIGNS), 'history': history,
                'domains': DOMAINS, 'moods': MOODS}
     for attempt in range(3):
@@ -321,7 +322,7 @@ def preview_sequence(day, count):
         Path(f'preview-post-{current}.txt').write_text(post_text + '\n', encoding='utf-8')
         Path(f'preview-post-{current}.html').write_text(post_html, encoding='utf-8')
         bundles.append(bundle)
-        history = (history + [bundle])[-7:]
+        history = (history + [bundle])[-HISTORY_LIMIT:]
         sections.append(f'## {current.isoformat()}')
         for sign in SIGNS:
             sections.append(f'### {SIGNS[sign]} {sign}\n\n{bundle["forecasts"][sign]}')
