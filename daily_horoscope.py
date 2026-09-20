@@ -51,16 +51,21 @@ def validate_originality(edition, history):
 
 
 def model_json(key, model, instruction, data):
-    response = request_json(
-        'https://api.openai.com/v1/chat/completions',
-        {'model': model, 'messages': [{'role': 'system', 'content': instruction},
-                                    {'role': 'user', 'content': json.dumps(data, ensure_ascii=False)}],
-         'max_completion_tokens': 12000, 'response_format': {'type': 'json_object'}},
-        {'Authorization': f'Bearer {key}'})
-    candidate = response['choices'][0]
-    if candidate.get('finish_reason') != 'stop':
-        raise ValueError('Генерация не завершена.')
-    return json.loads(candidate['message']['content'])
+    for budget in (12000, 24000):
+        response = request_json(
+            'https://api.openai.com/v1/chat/completions',
+            {'model': model, 'messages': [{'role': 'system', 'content': instruction},
+                                        {'role': 'user', 'content': json.dumps(data, ensure_ascii=False)}],
+             'max_completion_tokens': budget, 'response_format': {'type': 'json_object'}},
+            {'Authorization': f'Bearer {key}'})
+        candidate = response['choices'][0]
+        reason = candidate.get('finish_reason')
+        if reason == 'stop':
+            return json.loads(candidate['message']['content'])
+        if reason != 'length':
+            raise ValueError(f'Генерация не завершена: {reason}.')
+        print(f'Ответ обрезан при лимите {budget} токенов.', file=sys.stderr, flush=True)
+    raise ValueError('Ответ остался обрезанным после одной повторной попытки.')
 
 
 def words(text):
@@ -229,6 +234,9 @@ def preview_sequence(day, count):
         sections.append(f'## {current.isoformat()}')
         for sign in SIGNS:
             sections.append(f'### {SIGNS[sign]} {sign}\n\n{bundle["forecasts"][sign]}')
+        # Checkpoint only completed, validated test days, outside production state.
+        Path('preview.md').write_text('\n\n'.join(sections) + '\n', encoding='utf-8')
+        Path('preview-data.json').write_text(json.dumps(bundles, ensure_ascii=False, indent=2), encoding='utf-8')
         print(f'Предпросмотр: {current}, 12 знаков; тестовая история {len(history)} дней.', flush=True)
     Path('preview.md').write_text('\n\n'.join(sections) + '\n', encoding='utf-8')
     Path('preview-data.json').write_text(json.dumps(bundles, ensure_ascii=False, indent=2), encoding='utf-8')

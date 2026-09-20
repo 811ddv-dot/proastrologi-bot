@@ -21,6 +21,17 @@ def sample_plan():
 
 
 class EditorialTests(unittest.TestCase):
+    def test_truncated_model_output_has_one_bounded_retry(self):
+        truncated = {'choices': [{'finish_reason': 'length'}]}
+        complete = {'choices': [{'finish_reason': 'stop', 'message': {'content': '{}'}}]}
+        with patch.object(bot, 'request_json', side_effect=[truncated, complete]) as request:
+            self.assertEqual(bot.model_json('test', 'gpt-5-mini', 'instruction', {}), {})
+            self.assertEqual(request.call_args_list[1].args[1]['max_completion_tokens'], 24000)
+        with patch.object(bot, 'request_json', return_value=truncated) as request:
+            with self.assertRaises(ValueError):
+                bot.model_json('test', 'gpt-5-mini', 'instruction', {})
+            self.assertEqual(request.call_count, 2)
+
     def test_plan_needs_all_signs(self):
         plan = sample_plan()
         plan.pop('Овен')
