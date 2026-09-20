@@ -59,6 +59,11 @@ def model_json(key, model, instruction, data):
              'max_completion_tokens': budget, 'response_format': {'type': 'json_object'}},
             {'Authorization': f'Bearer {key}'})
         candidate = response['choices'][0]
+        usage = response.get('usage')
+        if isinstance(usage, dict):
+            print('API_USAGE ' + json.dumps({'requested_model': model,
+                  'actual_model': response.get('model'), 'usage': usage}),
+                  file=sys.stderr, flush=True)
         reason = candidate.get('finish_reason')
         if reason == 'stop':
             return json.loads(candidate['message']['content'])

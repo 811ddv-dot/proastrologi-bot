@@ -21,6 +21,17 @@ def sample_plan():
 
 
 class EditorialTests(unittest.TestCase):
+    def test_selected_model_is_sent_and_usage_contains_no_key(self):
+        response = {'model': 'gpt-5.4', 'usage': {'prompt_tokens': 100, 'completion_tokens': 20},
+                    'choices': [{'finish_reason': 'stop', 'message': {'content': '{}'}}]}
+        output = io.StringIO()
+        with patch.object(bot, 'request_json', return_value=response) as request, \
+                contextlib.redirect_stderr(output):
+            bot.model_json('SECRET_TEST_KEY', 'gpt-5.4', 'instruction', {})
+        self.assertEqual(request.call_args.args[1]['model'], 'gpt-5.4')
+        self.assertIn('API_USAGE', output.getvalue())
+        self.assertNotIn('SECRET_TEST_KEY', output.getvalue())
+
     def test_truncated_model_output_has_one_bounded_retry(self):
         truncated = {'choices': [{'finish_reason': 'length'}]}
         complete = {'choices': [{'finish_reason': 'stop', 'message': {'content': '{}'}}]}
