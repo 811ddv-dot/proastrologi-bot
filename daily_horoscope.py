@@ -19,6 +19,7 @@ from editorial import DOMAINS, MOODS, EXAMPLES, PLAN_PROMPT, WRITE_PROMPT, LANGU
 
 STATE = Path('horoscope-state/history.json')
 HISTORY_LIMIT = 30
+EDITORIAL_ATTEMPTS = 6
 TELEGRAM_LIMIT = 4096
 MAX_SIGN_LENGTH = 310
 
@@ -204,7 +205,8 @@ def generate_bundle(day, history):
     editorial_input = {'date': day.isoformat(), 'plan': plan, 'edition': draft,
                        'examples': EXAMPLES, 'history': history}
     repair_signs = None
-    for attempt in range(3):
+    feedback_history = []
+    for attempt in range(EDITORIAL_ATTEMPTS):
         candidate = clean_labels(model_json(key, model, LANGUAGE_PROMPT, editorial_input))
         if repair_signs is not None and isinstance(candidate, dict) and isinstance(edition, dict):
             edition = {sign: candidate.get(sign, edition.get(sign)) if sign in repair_signs
@@ -223,10 +225,12 @@ def generate_bundle(day, history):
         if not issues:
             break
         repair_signs = set(issues)
+        feedback_history.append(issues)
         editorial_input = {**editorial_input, 'edition': edition,
                            'validation_error': issues, 'quality_feedback': issues,
+                           'previous_feedback': feedback_history,
                            'repair_signs': list(issues)}
-        print(f'Язык/формат {attempt + 1}/3: {issues}', file=sys.stderr, flush=True)
+        print(f'Язык/формат {attempt + 1}/{EDITORIAL_ATTEMPTS}: {issues}', file=sys.stderr, flush=True)
     else:
         raise RuntimeError('Редактура не прошла проверку. Ничего не опубликовано.')
     print(f'{day}: написание и отдельная языковая редактура завершены.', file=sys.stderr, flush=True)

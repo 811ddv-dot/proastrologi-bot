@@ -170,7 +170,7 @@ class EditorialTests(unittest.TestCase):
         edition = {sign: 'text' for sign in bot.SIGNS}
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
                 patch.object(bot, 'edition_issues', return_value={'Овен': ['неверный текст']}), \
-                patch.object(bot, 'model_json', side_effect=[plan, edition, edition, edition, edition]):
+                patch.object(bot, 'model_json', side_effect=[plan, edition] + [edition] * bot.EDITORIAL_ATTEMPTS):
             with self.assertRaisesRegex(RuntimeError, 'Ничего не опубликовано'):
                 bot.generate_bundle(date(2026, 9, 21), [])
 
