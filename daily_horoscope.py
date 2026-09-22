@@ -60,9 +60,10 @@ def validate_originality(edition, history):
 
 
 class RequestBudget:
-    """Process-wide conservative USD estimate, shared by all preview days.
+    """Conservative USD estimate, shared by all preview days in this process.
 
-    Not an account/day billing limit. Rates: OpenAI standard text, 2026-09-22.
+    With durable generation enabled, also restored for the target edition.
+    Not an account billing limit. Rates: OpenAI standard text, 2026-09-22.
     Reserve before network IO; ambiguous failures retain the full reservation.
     """
     def __init__(self):
@@ -94,13 +95,37 @@ class RequestBudget:
 
 
 API_BUDGET = RequestBudget()
+GENERATION_STORE = None
+
+
+def open_generation_store(day):
+    """Opt-in until the new version has been approved for production."""
+    global GENERATION_STORE
+    GENERATION_STORE = None
+    if os.environ.get('DURABLE_GENERATION') != 'true':
+        return
+    from generation_store import GenerationStore
+    from history_store import api
+    GENERATION_STORE = GenerationStore(day, api)
+    API_BUDGET.calls = max(API_BUDGET.calls, GENERATION_STORE.data['calls'])
+    API_BUDGET.spent = max(API_BUDGET.spent, GENERATION_STORE.data['spent'])
 
 
 def model_json(key, model, instruction, data):
     for budget in (6000,):
         messages = [{'role': 'system', 'content': instruction},
                     {'role': 'user', 'content': json.dumps(data, ensure_ascii=False)}]
+        from generation_store import fingerprint
+        cache_key = fingerprint({'model': model, 'instruction': instruction, 'data': data,
+                                 'output_limit': budget, 'pipeline_version': 1})
+        if GENERATION_STORE is not None:
+            hit, result = GENERATION_STORE.cached(cache_key)
+            if hit:
+                print('CHECKPOINT: использован сохранённый ответ, без API-запроса.', flush=True)
+                return result
         reserved = API_BUDGET.reserve(model, messages, budget)
+        if GENERATION_STORE is not None:
+            GENERATION_STORE.begin(cache_key, API_BUDGET)
         response = request_json(
             'https://api.openai.com/v1/chat/completions',
             {'model': model, 'messages': messages, 'service_tier': 'default',
@@ -116,7 +141,10 @@ def model_json(key, model, instruction, data):
                   file=sys.stderr, flush=True)
         reason = candidate.get('finish_reason')
         if reason == 'stop':
-            return json.loads(candidate['message']['content'])
+            result = json.loads(candidate['message']['content'])
+            if GENERATION_STORE is not None:
+                GENERATION_STORE.finish(cache_key, result, API_BUDGET)
+            return result
         if reason != 'length':
             raise ValueError(f'Генерация не завершена: {reason}.')
         print(f'Ответ обрезан при лимите {budget} токенов.', file=sys.stderr, flush=True)
@@ -176,13 +204,14 @@ def request_json(url, payload, headers=None):
     req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                  headers={'Content-Type': 'application/json', **(headers or {})})
     try:
-        with urllib.request.urlopen(req, timeout=120) as response:
+        with urllib.request.urlopen(req, timeout=300 if url.startswith('https://api.openai.com/') else 120) as response:
             return json.load(response)
     except urllib.error.HTTPError as exc:
         # Never log the request URL: Telegram embeds the secret in it.
         raise RuntimeError(f'Сервис вернул HTTP {exc.code}; проверьте ключ и квоту.') from None
     except (urllib.error.URLError, TimeoutError):
-        raise RuntimeError('Сервис не ответил. Автоматический повтор отправки отключён во избежание дублей.') from None
+        service = 'OpenAI' if url.startswith('https://api.openai.com/') else 'Telegram'
+        raise RuntimeError(f'{service} не ответил. Результат запроса неизвестен; автоматический повтор отключён.') from None
 
 
 def validate_plan(plan, history):
@@ -408,11 +437,17 @@ def publish_bundle(day, bundle):
     token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
     if not token:
         raise RuntimeError('Не задан TELEGRAM_BOT_TOKEN.')
+    if GENERATION_STORE is not None and not GENERATION_STORE.begin_delivery(bundle):
+        remember(bundle)
+        print('Публикация уже подтверждена Telegram; восстановлена только история.', flush=True)
+        return
     response = request_json(f'https://api.telegram.org/bot{token}/sendMessage',
                             {'chat_id': os.environ.get('TELEGRAM_CHANNEL', '@proastrologi'),
                              'text': post, 'parse_mode': 'HTML'})
     if not response.get('ok'):
         raise RuntimeError('Telegram отклонил общий пост; остановка без повторной отправки.')
+    if GENERATION_STORE is not None:
+        GENERATION_STORE.finish_delivery(response['result']['message_id'])
     print(f'Отправлен 1 пост, 12 знаков; message_id={response["result"]["message_id"]}', flush=True)
     remember(bundle)
 
@@ -424,6 +459,7 @@ def preview_sequence(day, count):
     sections = ['# Тестовые выпуски\n\nНе отправлены в Telegram. Тексты без ручной редакции.']
     for offset in range(count):
         current = day + timedelta(days=offset)
+        open_generation_store(current)
         bundle = generate_bundle(current, history)
         post_text = format_edition(current, bundle['forecasts'], markup=False)
         post_html = format_edition(current, bundle['forecasts'])
@@ -478,6 +514,18 @@ def main():
         return
     if not args.preview and any(item['date'] == day.isoformat() for item in read_history()):
         print('Выпуск на эту дату уже отправлен. Повтор пропущен.')
+        return
+    open_generation_store(day)
+    if GENERATION_STORE is not None and GENERATION_STORE.data.get('delivery'):
+        delivery = GENERATION_STORE.data['delivery']
+        if delivery.get('status') != 'sent':
+            raise RuntimeError('Результат предыдущей отправки неизвестен. '
+                               'Генерация и повторная отправка заблокированы до проверки.')
+        bundle = delivery['bundle']
+        if bundle['date'] != day.isoformat():
+            raise RuntimeError('Дата сохранённой публикации не совпадает.')
+        remember(bundle)
+        print('Восстановлена история подтверждённой публикации, без генерации и отправки.')
         return
     bundle = generate_bundle(day, read_history())
     publish_bundle(day, bundle)

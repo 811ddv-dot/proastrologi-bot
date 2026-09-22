@@ -36,11 +36,11 @@ def canonical(history):
     return sorted(cleaned, key=lambda item: item['date'])[-bot.HISTORY_LIMIT:]
 
 
-def api(method, payload=None):
+def api(method, payload=None, path=REMOTE_PATH):
     token = os.environ.get('GH_HISTORY_TOKEN', '')
     if not token:
         raise RuntimeError('Не задан служебный токен GitHub для истории.')
-    url = f'https://api.github.com/repos/{REPOSITORY}/contents/{REMOTE_PATH}'
+    url = f'https://api.github.com/repos/{REPOSITORY}/contents/{path}'
     if method == 'GET':
         url += '?ref=main'
     request = urllib.request.Request(
