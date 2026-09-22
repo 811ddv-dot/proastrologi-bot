@@ -229,7 +229,9 @@ def generate_bundle(day, history):
     feedback_history = []
     reviewed_edition = None
     reviewed_issues = None
-    for attempt in range(EDITORIAL_ATTEMPTS):
+    format_attempts = 0
+    content_attempts = 0
+    for attempt in range(EDITORIAL_ATTEMPTS * 2):
         candidate = clean_labels(model_json(key, model, LANGUAGE_PROMPT, editorial_input))
         if repair_signs is not None and isinstance(candidate, dict) and isinstance(edition, dict):
             edition = {sign: candidate.get(sign, edition.get(sign)) if sign in repair_signs
@@ -237,10 +239,14 @@ def generate_bundle(day, history):
         else:
             edition = candidate
         issues = edition_issues(edition, history)
-        if not issues:
+        if issues:
+            format_attempts += 1
+        else:
             issues = review_edition(key, model, edition, history, reviewed_edition, reviewed_issues)
             reviewed_edition = dict(edition)
             reviewed_issues = issues
+            if issues:
+                content_attempts += 1
         if not issues:
             break
         repair_signs = set(issues)
@@ -249,7 +255,10 @@ def generate_bundle(day, history):
                            'validation_error': issues, 'quality_feedback': issues,
                            'previous_feedback': feedback_history,
                            'repair_signs': list(issues)}
-        print(f'Язык/формат {attempt + 1}/{EDITORIAL_ATTEMPTS}: {issues}', file=sys.stderr, flush=True)
+        print(f'Редактура: содержание {content_attempts}/{EDITORIAL_ATTEMPTS}, '
+              f'формат {format_attempts}/{EDITORIAL_ATTEMPTS}: {issues}', file=sys.stderr, flush=True)
+        if max(format_attempts, content_attempts) >= EDITORIAL_ATTEMPTS:
+            raise RuntimeError('Редактура не прошла проверку. Ничего не опубликовано.')
     else:
         raise RuntimeError('Редактура не прошла проверку. Ничего не опубликовано.')
     print(f'{day}: написание и отдельная языковая редактура завершены.', file=sys.stderr, flush=True)

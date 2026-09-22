@@ -94,6 +94,19 @@ class EvidenceTests(unittest.TestCase):
             bot.review_edition('key', 'model', self.edition, history)
             self.assertNotIn('plan', model.call_args.args[3]['history'][0])
 
+    def test_format_repairs_do_not_spend_content_budget(self):
+        from datetime import date
+        from test_daily_horoscope import sample_plan
+        edition = dict(self.edition)
+        # Five formatting failures plus one semantic failure must still allow success.
+        checks = [{'Овен': ['length']}] * 5 + [{}, {}]
+        issue = {'Овен': [{'kind': 'language', 'quote': edition['Овен'], 'reason': 'Ошибка'}]}
+        with patch.dict(bot.os.environ, {'OPENAI_API_KEY': 'test'}), \
+                patch.object(bot, 'model_json', side_effect=[sample_plan(), edition] + [edition] * 7), \
+                patch.object(bot, 'edition_issues', side_effect=checks), \
+                patch.object(bot, 'review_edition', side_effect=[issue, {}]):
+            self.assertEqual(bot.generate_bundle(date(2026, 9, 22), [])['forecasts'], edition)
+
 
 if __name__ == '__main__':
     unittest.main()
