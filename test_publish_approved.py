@@ -27,7 +27,7 @@ class ApprovedPublicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
             datafile = folder / 'preview-data.json'
-            datafile.write_text(json.dumps([{'date': '2026-09-23'}, bundle, {'date': '2026-09-24'}]))
+            datafile.write_text(json.dumps([{'date': '2026-09-22'}, bundle, {'date': '2026-09-24'}]))
             postfile = folder / f'preview-post-{day}.html'
             postfile.write_text(approved.bot.format_edition(day, bundle['forecasts']))
             with patch.object(approved.bot, 'read_history', return_value=[]), \
@@ -40,7 +40,7 @@ class ApprovedPublicationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     approved.publish_saved(folder, day)
                 send.assert_not_called()
-                datafile.write_text(json.dumps([{'date': '2026-09-23'}]))
+                datafile.write_text(json.dumps([{'date': '2026-09-24'}]))
                 with self.assertRaises(ValueError):
                     approved.publish_saved(folder, day)
                 send.assert_not_called()

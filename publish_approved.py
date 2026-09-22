@@ -1,4 +1,4 @@
-"""Publish the approved 22 September preview without another model call."""
+"""Publish the approved 23 September preview without another model call."""
 import json
 from datetime import date, datetime
 from pathlib import Path
@@ -6,12 +6,12 @@ from zoneinfo import ZoneInfo
 
 import daily_horoscope as bot
 
-APPROVED_DATE = date(2026, 9, 22)
+APPROVED_DATE = date(2026, 9, 23)
 
 
 def publish_saved(folder, today):
     if today != APPROVED_DATE:
-        raise ValueError('Этот одноразовый запуск разрешён только 22 сентября 2026.')
+        raise ValueError('Этот одноразовый запуск разрешён только 23 сентября 2026.')
     if any(item['date'] == today.isoformat() for item in bot.read_history()):
         print('Выпуск на сегодня уже отправлен. Повтор пропущен.')
         return False
