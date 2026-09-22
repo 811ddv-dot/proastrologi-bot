@@ -304,7 +304,9 @@ def repair_payload(day, plan, edition, issues, feedback_history, history=None):
             'edition': {sign: edition.get(sign) for sign in targets},
             'quality_feedback': feedback, 'previous_feedback': previous}
     if history is not None:
-        payload['history'] = [{'date': item['date'], 'forecasts': item['forecasts']} for item in history[-HISTORY_LIMIT:]]
+        from text_archive import INSTRUCTION
+        payload['originality_instruction'] = INSTRUCTION
+        payload['history'] = [{'date': item['date'], 'forecasts': item['forecasts']} for item in history]
         payload['other_signs'] = {sign: body for sign, body in edition.items() if sign not in targets}
         payload['repair_instruction'] = ('Проверь всю историю и остальные знаки: нельзя заменить '
             'один старый сюжет другим старым. Сохрани общий жанр прогноза, но измени '
@@ -320,12 +322,16 @@ def generate_bundle(day, history):
     if not re.fullmatch(r'[a-zA-Z0-9_./-]+', model):
         raise RuntimeError('Недопустимое имя модели.')
     history = [item for item in history if item['date'] < day.isoformat()][-HISTORY_LIMIT:]
+    from text_archive import history_for_generation, INSTRUCTION
+    published_history = history
+    history = history_for_generation(day, history, GENERATION_STORE, SIGNS)
     context = {'date': day.isoformat(), 'signs': list(SIGNS), 'history': history,
+               'originality_instruction': INSTRUCTION,
                'domains': DOMAINS, 'moods': MOODS}
     for attempt in range(3):
         plan = model_json(key, model, PLAN_PROMPT, context)
         try:
-            validate_plan(plan, history)
+            validate_plan(plan, published_history)
             break
         except (ValueError, TypeError, KeyError) as exc:
             context['previous_plan'] = plan
@@ -337,9 +343,11 @@ def generate_bundle(day, history):
           f'настроений {len(set(x["mood"] for x in plan.values()))}; история {len(history)} дней.',
           file=sys.stderr, flush=True)
     draft = model_json(key, model, WRITE_PROMPT, {
-        'date': day.isoformat(), 'plan': plan, 'examples': EXAMPLES, 'history': history})
+        'date': day.isoformat(), 'plan': plan, 'examples': EXAMPLES, 'history': history,
+        'originality_instruction': INSTRUCTION})
     editorial_input = {'date': day.isoformat(), 'plan': plan, 'edition': draft,
-                       'examples': EXAMPLES, 'history': history}
+                       'examples': EXAMPLES, 'history': history,
+                       'originality_instruction': INSTRUCTION}
     repair_signs = None
     feedback_history = []
     reviewed_edition = None
