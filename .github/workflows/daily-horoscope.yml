@@ -2,7 +2,7 @@ name: Daily horoscope
 
 on:
   schedule:
-    - cron: "17 3 * * *" # 06:17 Moscow (UTC+3)
+    - cron: "15 18 * * *" # 21:15 Moscow (UTC+3), forecast for tomorrow
   workflow_dispatch:
     inputs:
       maintenance:
@@ -14,7 +14,7 @@ on:
         type: boolean
         default: true
       preview_date:
-        description: "Date for preview in YYYY-MM-DD (optional)"
+        description: "Date for preview in YYYY-MM-DD (default: tomorrow in Moscow)"
         type: string
         default: ""
       preview_days:
@@ -77,12 +77,12 @@ jobs:
           if [ "$PREVIEW" = "true" ]; then
             export OPENAI_MODEL="$PREVIEW_MODEL"
             if [ -n "$PREVIEW_DATE" ]; then
-              python daily_horoscope.py --preview --date "$PREVIEW_DATE" --preview-days "$PREVIEW_DAYS"
+              python daily_horoscope.py --tomorrow --preview --date "$PREVIEW_DATE" --preview-days "$PREVIEW_DAYS"
             else
-              python daily_horoscope.py --preview --preview-days "$PREVIEW_DAYS"
+              python daily_horoscope.py --tomorrow --preview --preview-days "$PREVIEW_DAYS"
             fi
           else
-            python daily_horoscope.py
+            python daily_horoscope.py --tomorrow
           fi
       - name: Save durable publication history
         if: always() && steps.history.outcome == 'success' && inputs.preview != true && inputs.maintenance != true
