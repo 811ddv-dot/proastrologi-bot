@@ -389,9 +389,16 @@ def preview_sequence(day, count):
     return bundles
 
 
+def next_edition_date(now=None):
+    """Evening publication always targets the next Moscow calendar day."""
+    now = now or datetime.now(ZoneInfo('Europe/Moscow'))
+    return now.astimezone(ZoneInfo('Europe/Moscow')).date() + timedelta(days=1)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--preview', action='store_true', help='Показать выпуск без отправки в Telegram')
+    parser.add_argument('--tomorrow', action='store_true', help='Вечерний выпуск на следующий день по Москве')
     parser.add_argument('--date', type=date.fromisoformat, help='Дата только для предпросмотра')
     parser.add_argument('--preview-days', type=int, default=1, choices=range(1, 4),
                         help='От 1 до 3 последовательных тестовых дней; без записи истории публикаций')
@@ -400,7 +407,7 @@ def main():
         parser.error('--date разрешён только вместе с --preview')
     if args.preview_days != 1 and not args.preview:
         parser.error('--preview-days разрешён только вместе с --preview')
-    day = args.date or datetime.now(ZoneInfo('Europe/Moscow')).date()
+    day = args.date or (next_edition_date() if args.tomorrow else datetime.now(ZoneInfo('Europe/Moscow')).date())
     if args.preview:
         preview_sequence(day, args.preview_days)
         return

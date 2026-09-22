@@ -5,7 +5,7 @@ import json
 import os
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,6 +22,33 @@ def sample_plan():
 
 
 class EditorialTests(unittest.TestCase):
+    def test_evening_edition_targets_tomorrow_in_moscow(self):
+        self.assertEqual(bot.next_edition_date(datetime(2026, 9, 22, 18, 15, tzinfo=timezone.utc)), date(2026, 9, 23))
+        self.assertEqual(bot.next_edition_date(datetime(2026, 12, 31, 18, 15, tzinfo=timezone.utc)), date(2027, 1, 1))
+        self.assertEqual(bot.next_edition_date(datetime(2026, 9, 30, 22, 0, tzinfo=timezone.utc)), date(2026, 10, 2))
+
+    def test_main_publishes_tomorrow_not_today(self):
+        day = date(2026, 9, 23)
+        bundle = {'date': day.isoformat(), 'forecasts': {}}
+        with patch('sys.argv', ['daily_horoscope.py', '--tomorrow']), \
+                patch.object(bot, 'next_edition_date', return_value=day), \
+                patch.object(bot, 'read_history', return_value=[{'date': '2026-09-22'}]), \
+                patch.object(bot, 'generate_bundle', return_value=bundle) as generate, \
+                patch.object(bot, 'publish_bundle') as send:
+            bot.main()
+            generate.assert_called_once_with(day, [{'date': '2026-09-22'}])
+            send.assert_called_once_with(day, bundle)
+
+    def test_main_skips_already_published_tomorrow(self):
+        with patch('sys.argv', ['daily_horoscope.py', '--tomorrow']), \
+                patch.object(bot, 'next_edition_date', return_value=date(2026, 9, 23)), \
+                patch.object(bot, 'read_history', return_value=[{'date': '2026-09-23'}]), \
+                patch.object(bot, 'generate_bundle') as generate, \
+                patch.object(bot, 'publish_bundle') as send:
+            bot.main()
+            generate.assert_not_called()
+            send.assert_not_called()
+
     def test_history_retains_thirty_editions(self):
         with tempfile.TemporaryDirectory() as folder:
             state = Path(folder) / 'history.json'
