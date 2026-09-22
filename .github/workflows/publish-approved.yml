@@ -1,10 +1,10 @@
-name: Publish approved September 20 post
+name: Publish approved September 22 post
 
 on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 concurrency:
@@ -17,6 +17,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
       - name: Test publication guards
         run: python -m unittest -v
       - uses: actions/cache/restore@v4
@@ -24,11 +27,16 @@ jobs:
           path: horoscope-state
           key: horoscope-history-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: horoscope-history-
+      - name: Restore durable publication history
+        id: history
+        env:
+          GH_HISTORY_TOKEN: ${{ github.token }}
+        run: python history_store.py restore
       - name: Download exactly the approved preview
         uses: actions/download-artifact@v8
         with:
-          artifact-ids: '10602581637'
-          run-id: '35501068209'
+          artifact-ids: '10709461906'
+          run-id: '35753799888'
           github-token: ${{ github.token }}
           path: approved-preview
       - name: Publish one approved post without regeneration
@@ -36,8 +44,13 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.PROASTROLOGI }}
           TELEGRAM_CHANNEL: '@proastrologi'
         run: python publish_approved.py
+      - name: Save durable publication history
+        if: always() && steps.history.outcome == 'success'
+        env:
+          GH_HISTORY_TOKEN: ${{ github.token }}
+        run: python history_store.py save
       - name: Preserve publication history
-        if: success()
+        if: always() && steps.history.outcome == 'success'
         uses: actions/cache/save@v4
         with:
           path: horoscope-state
