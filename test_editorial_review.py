@@ -121,6 +121,13 @@ class EvidenceTests(unittest.TestCase):
                 patch.object(bot, 'review_edition', side_effect=[issue, {}]):
             self.assertEqual(bot.generate_bundle(date(2026, 9, 22), [])['forecasts'], edition)
 
+    def test_maximum_paragraphs_fit_one_post_in_every_month(self):
+        from datetime import date
+        edition = {sign: 'а' * bot.MAX_SIGN_LENGTH for sign in bot.SIGNS}
+        for month in range(1, 13):
+            post = bot.format_edition(date(2026, month, 28), edition, markup=False)
+            self.assertLessEqual(bot.text_length(post), bot.TELEGRAM_LIMIT)
+
 
 if __name__ == '__main__':
     unittest.main()

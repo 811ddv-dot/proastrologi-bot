@@ -22,7 +22,7 @@ STATE = Path('horoscope-state/history.json')
 HISTORY_LIMIT = 30
 EDITORIAL_ATTEMPTS = 6
 TELEGRAM_LIMIT = 4096
-MAX_SIGN_LENGTH = 310
+MAX_SIGN_LENGTH = 325
 
 
 def text_length(text):
@@ -96,10 +96,10 @@ def validate(edition, require_all=True):
     if not isinstance(edition, dict) or (require_all and set(edition) != set(SIGNS)):
         raise ValueError('Нужны ровно 12 знаков без пропусков.')
     for sign, body in edition.items():
-        if not isinstance(body, str) or not 25 <= len(words(body)) <= 50:
-            raise ValueError(f'{sign}: нужно 25–50 слов в коротком абзаце.')
+        if not isinstance(body, str) or not 25 <= len(words(body)) <= 55:
+            raise ValueError(f'{sign}: нужно 25–55 слов в коротком абзаце.')
         if text_length(body) > MAX_SIGN_LENGTH:
-            raise ValueError(f'{sign}: {text_length(body)} символов, сократи до 310, не обрывая предложения.')
+            raise ValueError(f'{sign}: {text_length(body)} символов, сократи до {MAX_SIGN_LENGTH}, не обрывая предложения.')
         sentences = [part for part in re.split(r'[.!?]+', body) if part.strip()]
         if not 3 <= len(sentences) <= 4:
             raise ValueError(f'{sign}: нужно 3–4 предложения.')
