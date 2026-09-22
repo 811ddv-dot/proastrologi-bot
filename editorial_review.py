@@ -44,10 +44,21 @@ def verify_issue(sign, issue, edition, history, changed):
                 source = next((item.get('forecasts', {}).get(other_sign)
                                for item in history if item.get('date') == day), None)
             other_quote = ref.get('quote')
+            if (isinstance(other_quote, str) and len(other_quote.strip()) >= 8
+                    and (not isinstance(source, str) or other_quote not in source)):
+                sources = [('current', name, body) for name, body in edition.items() if name != sign]
+                sources.extend((item['date'], name, body) for item in history
+                               for name, body in item.get('forecasts', {}).items())
+                matches = [(date, name, body) for date, name, body in sources
+                           if isinstance(body, str) and other_quote in body]
+                if len(matches) == 1:
+                    day, other_sign, source = matches[0]
+                    note['reference'] = {'date': day, 'sign': other_sign, 'quote': other_quote}
             if (not isinstance(source, str) or not isinstance(other_quote, str)
                     or len(other_quote.strip()) < 8 or other_quote not in source):
                 raise ValueError(f'{sign}: неверная ссылка или неточная цитата ({day}, {other_sign}). '
                                  f'Реальный текст этого источника: {source!r}. '
+                                 f'Указанная цитата: {other_quote!r}. '
                                  'Процитируй его дословно, выбери настоящий источник или отзови неподтверждённое замечание.')
             # When an edited paragraph collides with a frozen one, repair the edited one.
             if changed is not None and sign not in changed and day == 'current' and other_sign in changed:

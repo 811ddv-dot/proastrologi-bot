@@ -33,6 +33,20 @@ class EvidenceTests(unittest.TestCase):
         history = [{'date': '2026-09-21', 'forecasts': {'Водолей': 'Домашняя тема требует внимания.'}}]
         self.assertIn('Овен', verified_issues({'issues': {'Овен': self.issue}}, self.edition, history))
         self.issue['reference']['date'] = '2026-09-20'
+        result = verified_issues({'issues': {'Овен': self.issue}}, self.edition, history)
+        self.assertEqual(result['Овен'][0]['reference']['date'], '2026-09-21')
+
+    def test_recovers_unique_historical_quote_mislabeled_current(self):
+        self.issue['reference'] = {'date': 'current', 'sign': 'Весы', 'quote': 'Лёгкое общение помогает отдохнуть'}
+        history = [{'date': '2026-09-22', 'forecasts': {'Весы': 'Лёгкое общение помогает отдохнуть от забот.'}}]
+        result = verified_issues({'issues': {'Овен': self.issue}}, self.edition, history)
+        self.assertEqual(result['Овен'][0]['reference']['date'], '2026-09-22')
+
+    def test_ambiguous_quote_cannot_repair_wrong_reference(self):
+        self.issue['reference'] = {'date': 'current', 'sign': 'Весы', 'quote': 'Лёгкое общение помогает отдохнуть'}
+        history = [{'date': '2026-09-22', 'forecasts': {
+            'Весы': 'Лёгкое общение помогает отдохнуть от забот.',
+            'Рак': 'Лёгкое общение помогает отдохнуть и сменить настрой.'}}]
         with self.assertRaises(ValueError):
             verified_issues({'issues': {'Овен': self.issue}}, self.edition, history)
 
