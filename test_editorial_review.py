@@ -102,7 +102,7 @@ class EvidenceTests(unittest.TestCase):
     def test_planner_and_reviewer_enable_reasoning(self):
         response = {'choices': [{'finish_reason': 'stop', 'message': {'content': '{}'}}]}
         for instruction in (bot.PLAN_PROMPT, bot.QUALITY_PROMPT, bot.LANGUAGE_PROMPT, bot.ADJUDICATE_PROMPT, bot.WRITE_PROMPT):
-            with patch.object(bot, 'request_json', return_value=response) as request:
+            with patch.object(bot, 'API_BUDGET', bot.RequestBudget()), patch.object(bot, 'request_json', return_value=response) as request:
                 bot.model_json('key', 'gpt-5.4', instruction, {})
                 payload = request.call_args.args[1]
                 if instruction == bot.WRITE_PROMPT:
@@ -127,8 +127,8 @@ class EvidenceTests(unittest.TestCase):
         from datetime import date
         from test_daily_horoscope import sample_plan
         edition = dict(self.edition)
-        # Five formatting failures plus one semantic failure must still allow success.
-        checks = [{'Овен': ['length']}] * 5 + [{}, {}]
+        # One formatting failure plus one semantic failure must still allow success.
+        checks = [{'Овен': ['length']}, {}, {}]
         issue = {'Овен': [{'kind': 'language', 'quote': edition['Овен'], 'reason': 'Ошибка'}]}
         with patch.dict(bot.os.environ, {'OPENAI_API_KEY': 'test'}), \
                 patch.object(bot, 'model_json', side_effect=[sample_plan(), edition] + [edition] * 7), \

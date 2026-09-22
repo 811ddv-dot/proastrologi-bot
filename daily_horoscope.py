@@ -20,7 +20,7 @@ from editorial import DOMAINS, MOODS, EXAMPLES, PLAN_PROMPT, WRITE_PROMPT, LANGU
 
 STATE = Path('horoscope-state/history.json')
 HISTORY_LIMIT = 30
-EDITORIAL_ATTEMPTS = 6
+EDITORIAL_ATTEMPTS = 2
 TELEGRAM_LIMIT = 4096
 MAX_SIGN_LENGTH = 325
 
@@ -59,17 +59,57 @@ def validate_originality(edition, history):
             raise ValueError('Прогнозы знаков слишком похожи.')
 
 
+class RequestBudget:
+    """Process-wide conservative USD estimate, shared by all preview days.
+
+    Not an account/day billing limit. Rates: OpenAI standard text, 2026-09-22.
+    Reserve before network IO; ambiguous failures retain the full reservation.
+    """
+    def __init__(self):
+        self.calls = 0
+        self.spent = 0.0
+
+    def reserve(self, model, messages, output):
+        if model not in ('gpt-5.4', 'gpt-5-mini'):
+            raise RuntimeError('Для этой модели не настроена защита расходов.')
+        # UTF-8 byte bound plus ample framing overhead for text-only messages.
+        inputs = sum(len(m['content'].encode('utf-8')) + 100 for m in messages) + 1000
+        if inputs > 270000:
+            raise RuntimeError('Контекст слишком велик для безопасного бюджета.')
+        # Use GPT-5.4 rates conservatively for either allowed model.
+        amount = (inputs * 2.5 + output * 15) / 1000000
+        if self.calls >= 8 or self.spent + amount > .50:
+            raise RuntimeError('Лимит запуска: 8 API-запросов или $0.50 расчётного бюджета. Повторные запросы остановлены.')
+        self.calls += 1
+        self.spent += amount
+        return amount
+
+    def settle(self, reserved, usage):
+        if isinstance(usage, dict):
+            values = [usage.get('prompt_tokens'), usage.get('completion_tokens')]
+            if all(type(n) is int and n >= 0 for n in values):
+                actual = (values[0] * 2.5 + values[1] * 15) / 1000000
+                self.spent += actual - reserved
+        print(f'API_BUDGET calls={self.calls}/8 estimated_usd={self.spent:.5f}/0.50', file=sys.stderr, flush=True)
+
+
+API_BUDGET = RequestBudget()
+
+
 def model_json(key, model, instruction, data):
-    for budget in (12000, 24000):
+    for budget in (6000,):
+        messages = [{'role': 'system', 'content': instruction},
+                    {'role': 'user', 'content': json.dumps(data, ensure_ascii=False)}]
+        reserved = API_BUDGET.reserve(model, messages, budget)
         response = request_json(
             'https://api.openai.com/v1/chat/completions',
-            {'model': model, 'messages': [{'role': 'system', 'content': instruction},
-                                        {'role': 'user', 'content': json.dumps(data, ensure_ascii=False)}],
+            {'model': model, 'messages': messages, 'service_tier': 'default',
              'max_completion_tokens': budget, 'response_format': {'type': 'json_object'},
              **({'reasoning_effort': 'low'} if instruction in (PLAN_PROMPT, QUALITY_PROMPT, LANGUAGE_PROMPT, ADJUDICATE_PROMPT) else {})},
             {'Authorization': f'Bearer {key}'})
         candidate = response['choices'][0]
         usage = response.get('usage')
+        API_BUDGET.settle(reserved, usage)
         if isinstance(usage, dict):
             print('API_USAGE ' + json.dumps({'requested_model': model,
                   'actual_model': response.get('model'), 'usage': usage}),
@@ -80,7 +120,7 @@ def model_json(key, model, instruction, data):
         if reason != 'length':
             raise ValueError(f'Генерация не завершена: {reason}.')
         print(f'Ответ обрезан при лимите {budget} токенов.', file=sys.stderr, flush=True)
-    raise ValueError('Ответ остался обрезанным после одной повторной попытки.')
+    raise ValueError('Ответ обрезан. Автоматический платный повтор отключён.')
 
 
 def words(text):

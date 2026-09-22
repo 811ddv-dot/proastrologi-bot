@@ -22,6 +22,11 @@ def sample_plan():
 
 
 class EditorialTests(unittest.TestCase):
+    def setUp(self):
+        self.budget_patch = patch.object(bot, 'API_BUDGET', bot.RequestBudget())
+        self.budget_patch.start()
+        self.addCleanup(self.budget_patch.stop)
+
     def test_evening_edition_targets_tomorrow_in_moscow(self):
         self.assertEqual(bot.next_edition_date(datetime(2026, 9, 22, 18, 15, tzinfo=timezone.utc)), date(2026, 9, 23))
         self.assertEqual(bot.next_edition_date(datetime(2026, 12, 31, 18, 15, tzinfo=timezone.utc)), date(2027, 1, 1))
@@ -134,16 +139,44 @@ class EditorialTests(unittest.TestCase):
         self.assertIn('API_USAGE', output.getvalue())
         self.assertNotIn('SECRET_TEST_KEY', output.getvalue())
 
-    def test_truncated_model_output_has_one_bounded_retry(self):
+    def test_truncated_model_output_has_no_paid_retry(self):
         truncated = {'choices': [{'finish_reason': 'length'}]}
-        complete = {'choices': [{'finish_reason': 'stop', 'message': {'content': '{}'}}]}
-        with patch.object(bot, 'request_json', side_effect=[truncated, complete]) as request:
-            self.assertEqual(bot.model_json('test', 'gpt-5-mini', 'instruction', {}), {})
-            self.assertEqual(request.call_args_list[1].args[1]['max_completion_tokens'], 24000)
         with patch.object(bot, 'request_json', return_value=truncated) as request:
             with self.assertRaises(ValueError):
                 bot.model_json('test', 'gpt-5-mini', 'instruction', {})
-            self.assertEqual(request.call_count, 2)
+            self.assertEqual(request.call_count, 1)
+            self.assertEqual(request.call_args.args[1]['max_completion_tokens'], 6000)
+
+    def test_budget_blocks_ninth_request_before_network(self):
+        response = {'usage': {'prompt_tokens': 1, 'completion_tokens': 1},
+                    'choices': [{'finish_reason': 'stop', 'message': {'content': '{}'}}]}
+        with patch.object(bot, 'request_json', return_value=response) as request:
+            for _ in range(8):
+                bot.model_json('test', 'gpt-5.4', 'instruction', {})
+            with self.assertRaises(RuntimeError):
+                bot.model_json('test', 'gpt-5.4', 'instruction', {})
+            self.assertEqual(request.call_count, 8)
+
+    def test_budget_blocks_cost_before_network(self):
+        bot.API_BUDGET.spent = .49
+        with patch.object(bot, 'request_json') as request:
+            with self.assertRaises(RuntimeError):
+                bot.model_json('test', 'gpt-5.4', 'instruction', {})
+            request.assert_not_called()
+
+    def test_ambiguous_failure_keeps_reserved_budget(self):
+        with patch.object(bot, 'request_json', side_effect=TimeoutError):
+            with self.assertRaises(TimeoutError):
+                bot.model_json('test', 'gpt-5.4', 'instruction', {})
+        self.assertEqual(bot.API_BUDGET.calls, 1)
+        self.assertGreater(bot.API_BUDGET.spent, .09)
+
+    def test_unknown_model_and_huge_context_blocked(self):
+        with patch.object(bot, 'request_json') as request:
+            for model, data in [('unknown', {}), ('gpt-5.4', {'text': 'я' * 140000})]:
+                with self.assertRaises(RuntimeError):
+                    bot.model_json('test', model, 'instruction', data)
+            request.assert_not_called()
 
     def test_plan_needs_all_signs(self):
         plan = sample_plan()
