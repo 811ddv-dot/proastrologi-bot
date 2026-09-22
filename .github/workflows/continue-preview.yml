@@ -1,0 +1,34 @@
+name: Continue September 24 preview
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: daily-horoscope
+  cancel-in-progress: false
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - run: python -m unittest -q
+      - run: python history_store.py restore
+        env:
+          GH_HISTORY_TOKEN: ${{ github.token }}
+      - run: python continue_preview.py
+        env:
+          GH_HISTORY_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: continued-preview
+          path: |
+            preview.md
+            preview-data.json
+            preview-post-*.txt
+            preview-post-*.html
