@@ -69,6 +69,8 @@ class RequestBudget:
     def __init__(self):
         self.calls = 0
         self.spent = 0.0
+        self.limit = .50
+        self.max_calls = 8
 
     def reserve(self, model, messages, output):
         if model not in ('gpt-5.4', 'gpt-5-mini'):
@@ -79,8 +81,8 @@ class RequestBudget:
             raise RuntimeError('Контекст слишком велик для безопасного бюджета.')
         # Use GPT-5.4 rates conservatively for either allowed model.
         amount = (inputs * 2.5 + output * 15) / 1000000
-        if self.calls >= 8 or self.spent + amount > .50:
-            raise RuntimeError('Лимит запуска: 8 API-запросов или $0.50 расчётного бюджета. Повторные запросы остановлены.')
+        if self.calls >= self.max_calls or self.spent + amount > self.limit:
+            raise RuntimeError(f'Лимит запуска: {self.max_calls} API-запросов или ${self.limit:.2f} расчётного бюджета. Повторные запросы остановлены.')
         self.calls += 1
         self.spent += amount
         return amount
@@ -91,7 +93,7 @@ class RequestBudget:
             if all(type(n) is int and n >= 0 for n in values):
                 actual = (values[0] * 2.5 + values[1] * 15) / 1000000
                 self.spent += actual - reserved
-        print(f'API_BUDGET calls={self.calls}/8 estimated_usd={self.spent:.5f}/0.50', file=sys.stderr, flush=True)
+        print(f'API_BUDGET calls={self.calls}/{self.max_calls} estimated_usd={self.spent:.5f}/{self.limit:.2f}', file=sys.stderr, flush=True)
 
 
 API_BUDGET = RequestBudget()
@@ -511,6 +513,16 @@ def next_edition_date(now=None):
     return now.astimezone(ZoneInfo('Europe/Moscow')).date() + timedelta(days=1)
 
 
+def authorize_preview_budget(day, count, preview, now=None):
+    """Owner-approved $1 TOTAL continuation, only this edition and authorization day."""
+    now = now or datetime.now(ZoneInfo('Europe/Moscow'))
+    if (preview and count == 1 and day == date(2026, 9, 26)
+            and now.astimezone(ZoneInfo('Europe/Moscow')).date() == date(2026, 9, 23)):
+        API_BUDGET.limit = 1.0
+        API_BUDGET.max_calls = 12
+        # open_generation_store subsequently restores ALL earlier costs and calls.
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--preview', action='store_true', help='Показать выпуск без отправки в Telegram')
@@ -525,6 +537,7 @@ def main():
         parser.error('--preview-days разрешён только вместе с --preview')
     day = args.date or (next_edition_date() if args.tomorrow else datetime.now(ZoneInfo('Europe/Moscow')).date())
     if args.preview:
+        authorize_preview_budget(day, args.preview_days, args.preview)
         preview_sequence(day, args.preview_days)
         return
     if not args.preview and any(item['date'] == day.isoformat() for item in read_history()):
