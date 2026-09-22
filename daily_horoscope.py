@@ -248,6 +248,34 @@ def review_edition(key, model, edition, history, previous=None, previous_issues=
     raise RuntimeError('Редактор не подтвердил замечания цитатами. Ничего не опубликовано.')
 
 
+def repair_payload(day, plan, edition, issues, feedback_history):
+    """Only repair targets and cited conflicts; full history stays in validators."""
+    targets = [sign for sign in SIGNS if sign in issues]
+    feedback = {}
+    for sign in targets:
+        feedback[sign] = []
+        for item in issues[sign]:
+            if isinstance(item, dict):
+                # Current quote duplicates edition[sign]; reference is the conflict.
+                feedback[sign].append({k: item[k] for k in ('kind', 'reason', 'reference') if k in item})
+            else:
+                feedback[sign].append(item)
+    previous = {}
+    for sign in targets:
+        notes = []
+        for old in feedback_history[-2:]:
+            for item in old.get(sign, []):
+                note = item.get('reason', '') if isinstance(item, dict) else str(item)
+                if note and note not in notes:
+                    notes.append(note)
+        if notes:
+            previous[sign] = notes
+    return {'date': day.isoformat(), 'repair_signs': targets,
+            'plan': {sign: plan[sign] for sign in targets},
+            'edition': {sign: edition.get(sign) for sign in targets},
+            'quality_feedback': feedback, 'previous_feedback': previous}
+
+
 def generate_bundle(day, history):
     key = ''.join(os.environ.get('OPENAI_API_KEY', '').split())
     if not key:
@@ -301,11 +329,8 @@ def generate_bundle(day, history):
         if not issues:
             break
         repair_signs = set(issues)
+        editorial_input = repair_payload(day, plan, edition, issues, feedback_history)
         feedback_history.append(issues)
-        editorial_input = {**editorial_input, 'edition': edition,
-                           'validation_error': issues, 'quality_feedback': issues,
-                           'previous_feedback': feedback_history,
-                           'repair_signs': list(issues)}
         print(f'Редактура: содержание {content_attempts}/{EDITORIAL_ATTEMPTS}, '
               f'формат {format_attempts}/{EDITORIAL_ATTEMPTS}: {issues}', file=sys.stderr, flush=True)
         if max(format_attempts, content_attempts) >= EDITORIAL_ATTEMPTS:

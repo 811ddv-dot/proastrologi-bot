@@ -164,6 +164,39 @@ class EditorialTests(unittest.TestCase):
                 bot.model_json('test', 'gpt-5.4', 'instruction', {})
             request.assert_not_called()
 
+    def test_repair_payload_is_scoped_and_does_not_duplicate_quotes(self):
+        edition = {sign: 'Прогноз ' + sign for sign in bot.SIGNS}
+        ref = {'date': '2026-09-23', 'sign': 'Рыбы', 'quote': 'Старый конфликтующий текст'}
+        issues = {'Овен': [{'kind': 'duplicate', 'quote': edition['Овен'],
+                            'reason': 'Другой сюжет нужен', 'reference': ref}]}
+        payload = bot.repair_payload(date(2026, 9, 24), sample_plan(), edition, issues, [])
+        self.assertEqual(payload['repair_signs'], ['Овен'])
+        self.assertEqual(set(payload['plan']), {'Овен'})
+        self.assertEqual(payload['edition'], {'Овен': edition['Овен']})
+        self.assertEqual(payload['quality_feedback']['Овен'][0]['reference'], ref)
+        self.assertNotIn('quote', payload['quality_feedback']['Овен'][0])
+        for name in ('history', 'validation_error', 'examples'):
+            self.assertNotIn(name, payload)
+
+    def test_repair_previous_feedback_bounded_to_current_targets(self):
+        past = [{'Овен': ['obsolete']}, {'Овен': ['recent'], 'Рак': ['unrelated']}, {'Овен': ['latest']}]
+        payload = bot.repair_payload(date(2026, 9, 24), sample_plan(), {}, {'Овен': ['length']}, past)
+        self.assertEqual(payload['previous_feedback'], {'Овен': ['recent', 'latest']})
+        self.assertEqual(payload['edition'], {'Овен': None})
+
+    def test_eight_sign_repair_fits_remaining_budget(self):
+        edition = {sign: 'я' * 325 for sign in bot.SIGNS}
+        issues = {sign: [{'kind': 'duplicate', 'quote': edition[sign], 'reason': 'р' * 300,
+                         'reference': {'date': '2026-09-23', 'sign': 'Рыбы', 'quote': 'с' * 325}}]
+                  for sign in list(bot.SIGNS)[:8]}
+        payload = bot.repair_payload(date(2026, 9, 24), sample_plan(), edition, issues, [])
+        budget = bot.RequestBudget()
+        budget.calls, budget.spent = 5, .19329
+        amount = budget.reserve('gpt-5.4', [{'content': bot.LANGUAGE_PROMPT},
+                               {'content': json.dumps(payload, ensure_ascii=False)}], 6000)
+        self.assertLess(budget.spent, .50)
+        self.assertGreater(amount, 0)
+
     def test_ambiguous_failure_keeps_reserved_budget(self):
         with patch.object(bot, 'request_json', side_effect=TimeoutError):
             with self.assertRaises(TimeoutError):
@@ -223,7 +256,7 @@ class EditorialTests(unittest.TestCase):
                 patch.object(bot, 'model_json', side_effect=[plan, edition, edition, edition, {'issues': {}}]) as model:
             bot.generate_bundle(date(2026, 9, 21), [])
         self.assertEqual(model.call_count, 5)
-        self.assertIn('канцеляризм', model.call_args_list[3].args[3]['validation_error']['Овен'])
+        self.assertIn('канцеляризм', model.call_args_list[3].args[3]['quality_feedback']['Овен'])
 
     def test_failed_edit_never_returns_bundle(self):
         plan = sample_plan()
