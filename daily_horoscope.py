@@ -277,7 +277,7 @@ def review_edition(key, model, edition, history, previous=None, previous_issues=
     raise RuntimeError('Редактор не подтвердил замечания цитатами. Ничего не опубликовано.')
 
 
-def repair_payload(day, plan, edition, issues, feedback_history):
+def repair_payload(day, plan, edition, issues, feedback_history, history=None):
     """Only repair targets and cited conflicts; full history stays in validators."""
     targets = [sign for sign in SIGNS if sign in issues]
     feedback = {}
@@ -299,10 +299,17 @@ def repair_payload(day, plan, edition, issues, feedback_history):
                     notes.append(note)
         if notes:
             previous[sign] = notes
-    return {'date': day.isoformat(), 'repair_signs': targets,
+    payload = {'date': day.isoformat(), 'repair_signs': targets,
             'plan': {sign: plan[sign] for sign in targets},
             'edition': {sign: edition.get(sign) for sign in targets},
             'quality_feedback': feedback, 'previous_feedback': previous}
+    if history is not None:
+        payload['history'] = [{'date': item['date'], 'forecasts': item['forecasts']} for item in history[-HISTORY_LIMIT:]]
+        payload['other_signs'] = {sign: body for sign, body in edition.items() if sign not in targets}
+        payload['repair_instruction'] = ('Проверь всю историю и остальные знаки: нельзя заменить '
+            'один старый сюжет другим старым. Сохрани общий жанр прогноза, но измени '
+            'саму центральную тенденцию повторяющегося текста, а не слова.')
+    return payload
 
 
 def generate_bundle(day, history):
@@ -358,7 +365,7 @@ def generate_bundle(day, history):
         if not issues:
             break
         repair_signs = set(issues)
-        editorial_input = repair_payload(day, plan, edition, issues, feedback_history)
+        editorial_input = repair_payload(day, plan, edition, issues, feedback_history, history)
         feedback_history.append(issues)
         print(f'Редактура: содержание {content_attempts}/{EDITORIAL_ATTEMPTS}, '
               f'формат {format_attempts}/{EDITORIAL_ATTEMPTS}: {issues}', file=sys.stderr, flush=True)
