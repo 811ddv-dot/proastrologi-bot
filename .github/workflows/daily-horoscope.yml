@@ -4,6 +4,11 @@ on:
   # Only cron-job.org dispatches this workflow at 21:15 Europe/Moscow.
   workflow_dispatch:
     inputs:
+      publication_test:
+        description: "One-time authorized September 23 tests"
+        type: choice
+        options: ["none", "saved24", "full25"]
+        default: "none"
       maintenance:
         description: "Migrate/check history and test private alerts (no generation or publication)"
         type: boolean
@@ -29,6 +34,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: daily-horoscope
@@ -37,7 +43,7 @@ concurrency:
 jobs:
   publish:
     # Keep production paused until the owner approves the preview.
-    if: inputs.preview == true || inputs.maintenance == true || vars.PRODUCTION_ENABLED == 'true'
+    if: inputs.preview == true || inputs.maintenance == true || inputs.publication_test == 'saved24' || inputs.publication_test == 'full25' || vars.PRODUCTION_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -63,6 +69,15 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.PROASTROLOGI }}
           TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
         run: python notify_admin.py --test
+      - name: Download approved immutable September 24 preview
+        if: inputs.publication_test == 'saved24'
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 35791462685
+          artifact-ids: 10722541206
+          path: approved-preview
+          merge-multiple: true
       - name: Generate and validate all 12 forecasts
         if: inputs.maintenance != true
         env:
@@ -72,12 +87,19 @@ jobs:
           GH_HISTORY_TOKEN: ${{ github.token }}
           DURABLE_GENERATION: "true"
           PREVIEW: ${{ inputs.preview }}
+          PUBLICATION_TEST: ${{ inputs.publication_test }}
           PREVIEW_DATE: ${{ inputs.preview_date }}
           PREVIEW_DAYS: ${{ inputs.preview_days || '1' }}
           OPENAI_MODEL: "gpt-5.4"
           PREVIEW_MODEL: ${{ inputs.preview_model || 'gpt-5.4' }}
         run: |
-          if [ "$PREVIEW" = "true" ]; then
+          if [ "$PUBLICATION_TEST" = "saved24" ] || [ "$PUBLICATION_TEST" = "full25" ]; then
+            if [ "$PREVIEW" = "true" ]; then
+              echo "Publication test requires preview=false"
+              exit 1
+            fi
+            python publication_test.py "$PUBLICATION_TEST"
+          elif [ "$PREVIEW" = "true" ]; then
             export OPENAI_MODEL="$PREVIEW_MODEL"
             if [ -n "$PREVIEW_DATE" ]; then
               python daily_horoscope.py --tomorrow --preview --date "$PREVIEW_DATE" --preview-days "$PREVIEW_DAYS"
