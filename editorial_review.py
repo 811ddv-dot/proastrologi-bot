@@ -4,6 +4,29 @@ import re
 KINDS = {'duplicate', 'language', 'tautology', 'incoherent'}
 
 
+def full_source_review(review, edition, history):
+    """Bind each proposed issue to actual paragraphs for independent adjudication."""
+    if not isinstance(review, dict) or not isinstance(review.get('issues'), dict):
+        raise ValueError('Нужен объект issues.')
+    normalized = {}
+    for sign, issue in review['issues'].items():
+        if sign not in edition or not isinstance(issue, dict) or issue.get('kind') not in KINDS:
+            raise ValueError('Неизвестный знак или неверный формат замечания.')
+        note = {**issue, 'quote': edition[sign]}
+        if issue['kind'] == 'duplicate':
+            ref = issue.get('reference')
+            if not isinstance(ref, dict):
+                raise ValueError('Нужен источник предполагаемого повтора.')
+            name, day = ref.get('sign'), ref.get('date')
+            source = edition.get(name) if day == 'current' else next(
+                (item.get('forecasts', {}).get(name) for item in history if item.get('date') == day), None)
+            if not isinstance(source, str) or (day == 'current' and name == sign):
+                raise ValueError('Указанный источник отсутствует или совпадает с самим абзацем.')
+            note['reference'] = {'date': day, 'sign': name, 'quote': source}
+        normalized[sign] = note
+    return {'issues': normalized}
+
+
 def grounded_quote(source, quote):
     """Recover literal source spans from excerpts with omissions, never paraphrases."""
     if not isinstance(source, str) or not isinstance(quote, str) or len(quote.strip()) < 8:

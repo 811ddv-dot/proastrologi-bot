@@ -198,7 +198,7 @@ class EditorialTests(unittest.TestCase):
                     {'issues': {'Рак': {'kind': 'duplicate', 'quote': 'original Рак',
                                        'reason': 'Совпала ситуация и итог.',
                                        'reference': {'date': 'current', 'sign': 'Овен', 'quote': 'original Овен'}}}},
-                    revised, {'issues': {}}]):
+                    {'confirmed': ['Рак']}, revised, {'issues': {}}]):
             result = bot.generate_bundle(date(2026, 9, 21), [])
         self.assertEqual(result['forecasts']['Рак'], 'новая тема')
 

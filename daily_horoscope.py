@@ -12,11 +12,11 @@ from itertools import combinations
 from pathlib import Path
 from difflib import SequenceMatcher
 from zoneinfo import ZoneInfo
-from editorial_review import verified_issues
+from editorial_review import verified_issues, full_source_review
 
 SIGNS = dict(zip('Овен Телец Близнецы Рак Лев Дева Весы Скорпион Стрелец Козерог Водолей Рыбы'.split(), '♈♉♊♋♌♍♎♏♐♑♒♓'))
 MONTHS = 'января февраля марта апреля мая июня июля августа сентября октября ноября декабря'.split()
-from editorial import DOMAINS, MOODS, EXAMPLES, PLAN_PROMPT, WRITE_PROMPT, LANGUAGE_PROMPT, QUALITY_PROMPT
+from editorial import DOMAINS, MOODS, EXAMPLES, PLAN_PROMPT, WRITE_PROMPT, LANGUAGE_PROMPT, QUALITY_PROMPT, ADJUDICATE_PROMPT
 
 STATE = Path('horoscope-state/history.json')
 HISTORY_LIMIT = 30
@@ -66,7 +66,7 @@ def model_json(key, model, instruction, data):
             {'model': model, 'messages': [{'role': 'system', 'content': instruction},
                                         {'role': 'user', 'content': json.dumps(data, ensure_ascii=False)}],
              'max_completion_tokens': budget, 'response_format': {'type': 'json_object'},
-             **({'reasoning_effort': 'low'} if instruction in (PLAN_PROMPT, QUALITY_PROMPT, LANGUAGE_PROMPT) else {})},
+             **({'reasoning_effort': 'low'} if instruction in (PLAN_PROMPT, QUALITY_PROMPT, LANGUAGE_PROMPT, ADJUDICATE_PROMPT) else {})},
             {'Authorization': f'Bearer {key}'})
         candidate = response['choices'][0]
         usage = response.get('usage')
@@ -189,7 +189,18 @@ def review_edition(key, model, edition, history, previous=None, previous_issues=
     for attempt in range(2):
         review = model_json(key, model, QUALITY_PROMPT, context)
         try:
-            return verified_issues(review, edition, history, changed)
+            candidates = verified_issues(full_source_review(review, edition, history), edition, history, changed)
+            if not candidates:
+                return {}
+            verdict = model_json(key, model, ADJUDICATE_PROMPT, {'candidates': candidates})
+            confirmed = verdict.get('confirmed') if isinstance(verdict, dict) else None
+            if (not isinstance(confirmed, list) or any(not isinstance(sign, str) or sign not in candidates
+                                                     for sign in confirmed)):
+                raise ValueError('Независимая проверка должна вернуть confirmed из предложенных знаков.')
+            rejected = sorted(set(candidates) - set(confirmed))
+            if rejected:
+                print(f'Независимая сверка не подтвердила замечания: {", ".join(rejected)}.', file=sys.stderr, flush=True)
+            return {sign: candidates[sign] for sign in confirmed}
         except ValueError as exc:
             context['review_error'] = str(exc)
             context['invalid_review'] = review

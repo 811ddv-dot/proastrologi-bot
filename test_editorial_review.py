@@ -88,11 +88,11 @@ class EvidenceTests(unittest.TestCase):
 
     def test_pending_unchanged_paragraph_stays_in_scope(self):
         self.issue['kind'] = 'language'
-        with patch.object(bot, 'model_json', return_value={'issues': {'Овен': self.issue}}) as model:
+        with patch.object(bot, 'model_json', side_effect=[{'issues': {'Овен': self.issue}}, {'confirmed': ['Овен']}]) as model:
             result = bot.review_edition('key', 'model', self.edition, [],
                                         dict(self.edition), {'Овен': [self.issue]})
             self.assertIn('Овен', result)
-            self.assertEqual(model.call_args.args[3]['review_signs'], ['Овен'])
+            self.assertEqual(model.call_args_list[0].args[3]['review_signs'], ['Овен'])
 
     def test_initial_review_covers_every_sign(self):
         with patch.object(bot, 'model_json', return_value={'issues': {}}) as model:
@@ -101,7 +101,7 @@ class EvidenceTests(unittest.TestCase):
 
     def test_planner_and_reviewer_enable_reasoning(self):
         response = {'choices': [{'finish_reason': 'stop', 'message': {'content': '{}'}}]}
-        for instruction in (bot.PLAN_PROMPT, bot.QUALITY_PROMPT, bot.LANGUAGE_PROMPT, bot.WRITE_PROMPT):
+        for instruction in (bot.PLAN_PROMPT, bot.QUALITY_PROMPT, bot.LANGUAGE_PROMPT, bot.ADJUDICATE_PROMPT, bot.WRITE_PROMPT):
             with patch.object(bot, 'request_json', return_value=response) as request:
                 bot.model_json('key', 'gpt-5.4', instruction, {})
                 payload = request.call_args.args[1]
@@ -142,6 +142,25 @@ class EvidenceTests(unittest.TestCase):
         for month in range(1, 13):
             post = bot.format_edition(date(2026, month, 28), edition, markup=False)
             self.assertLessEqual(bot.text_length(post), bot.TELEGRAM_LIMIT)
+
+    def test_unconfirmed_claim_does_not_block_edition(self):
+        self.issue['quote'] = 'Искажённый пересказ'
+        self.issue['reference']['quote'] = 'Выдуманная цитата'
+        with patch.object(bot, 'model_json', side_effect=[{'issues': {'Овен': self.issue}}, {'confirmed': []}]) as model:
+            self.assertEqual(bot.review_edition('key', 'model', self.edition, []), {})
+            candidate = model.call_args.args[3]['candidates']['Овен'][0]
+            self.assertEqual(candidate['quote'], self.edition['Овен'])
+            self.assertEqual(candidate['reference']['quote'], self.edition['Телец'])
+
+    def test_confirmed_claim_requires_repair(self):
+        with patch.object(bot, 'model_json', side_effect=[{'issues': {'Овен': self.issue}}, {'confirmed': ['Овен']}]):
+            self.assertIn('Овен', bot.review_edition('key', 'model', self.edition, []))
+
+    def test_malformed_independent_verdict_fails_closed(self):
+        replies = [{'issues': {'Овен': self.issue}}, {'confirmed': ['Unknown']}] * 2
+        with patch.object(bot, 'model_json', side_effect=replies):
+            with self.assertRaises(RuntimeError):
+                bot.review_edition('key', 'model', self.edition, [])
 
 
 if __name__ == '__main__':
