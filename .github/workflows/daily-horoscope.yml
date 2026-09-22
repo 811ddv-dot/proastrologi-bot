@@ -1,8 +1,7 @@
 name: Daily horoscope
 
 on:
-  schedule:
-    - cron: "15 18 * * *" # 21:15 Moscow (UTC+3), forecast for tomorrow
+  # Only cron-job.org dispatches this workflow at 21:15 Europe/Moscow.
   workflow_dispatch:
     inputs:
       maintenance:
@@ -37,6 +36,8 @@ concurrency:
 
 jobs:
   publish:
+    # Keep production paused until the owner approves the preview.
+    if: inputs.preview == true || inputs.maintenance == true || vars.PRODUCTION_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -68,6 +69,8 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.PROASTROLOGI }}
           TELEGRAM_CHANNEL: "@proastrologi"
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GH_HISTORY_TOKEN: ${{ github.token }}
+          DURABLE_GENERATION: "true"
           PREVIEW: ${{ inputs.preview }}
           PREVIEW_DATE: ${{ inputs.preview_date }}
           PREVIEW_DAYS: ${{ inputs.preview_days || '1' }}
