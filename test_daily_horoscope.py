@@ -195,7 +195,10 @@ class EditorialTests(unittest.TestCase):
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
                 patch.object(bot, 'edition_issues', return_value={}), \
                 patch.object(bot, 'model_json', side_effect=[sample_plan(), edition, edition,
-                    {'issues': {'Рак': 'Повторён вчерашний смысл'}}, revised, {'issues': {}}]):
+                    {'issues': {'Рак': {'kind': 'duplicate', 'quote': 'original Рак',
+                                       'reason': 'Совпала ситуация и итог.',
+                                       'reference': {'date': 'current', 'sign': 'Овен', 'quote': 'original Овен'}}}},
+                    revised, {'issues': {}}]):
             result = bot.generate_bundle(date(2026, 9, 21), [])
         self.assertEqual(result['forecasts']['Рак'], 'новая тема')
 

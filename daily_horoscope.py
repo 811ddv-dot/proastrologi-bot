@@ -12,6 +12,7 @@ from itertools import combinations
 from pathlib import Path
 from difflib import SequenceMatcher
 from zoneinfo import ZoneInfo
+from editorial_review import verified_issues
 
 SIGNS = dict(zip('Овен Телец Близнецы Рак Лев Дева Весы Скорпион Стрелец Козерог Водолей Рыбы'.split(), '♈♉♊♋♌♍♎♏♐♑♒♓'))
 MONTHS = 'января февраля марта апреля мая июня июля августа сентября октября ноября декабря'.split()
@@ -176,6 +177,24 @@ def validate_plan(plan, history):
     return plan
 
 
+def review_edition(key, model, edition, history, previous=None, previous_issues=None):
+    changed = None if previous is None else {sign for sign in SIGNS if edition[sign] != previous[sign]}
+    if changed is not None:
+        changed.update(previous_issues or {})
+    context = {'edition': edition, 'history': history,
+               'review_signs': list(SIGNS) if changed is None else sorted(changed),
+               'previous_issues': previous_issues or {}}
+    for attempt in range(2):
+        review = model_json(key, model, QUALITY_PROMPT, context)
+        try:
+            return verified_issues(review, edition, history, changed)
+        except ValueError as exc:
+            context['review_error'] = str(exc)
+            context['invalid_review'] = review
+            print(f'Проверка доказательств {attempt + 1}/2: {exc}', file=sys.stderr, flush=True)
+    raise RuntimeError('Редактор не подтвердил замечания цитатами. Ничего не опубликовано.')
+
+
 def generate_bundle(day, history):
     key = ''.join(os.environ.get('OPENAI_API_KEY', '').split())
     if not key:
@@ -206,6 +225,8 @@ def generate_bundle(day, history):
                        'examples': EXAMPLES, 'history': history}
     repair_signs = None
     feedback_history = []
+    reviewed_edition = None
+    reviewed_issues = None
     for attempt in range(EDITORIAL_ATTEMPTS):
         candidate = clean_labels(model_json(key, model, LANGUAGE_PROMPT, editorial_input))
         if repair_signs is not None and isinstance(candidate, dict) and isinstance(edition, dict):
@@ -215,13 +236,9 @@ def generate_bundle(day, history):
             edition = candidate
         issues = edition_issues(edition, history)
         if not issues:
-            review = model_json(key, model, QUALITY_PROMPT, {'edition': edition, 'history': history})
-            if not isinstance(review, dict) or not isinstance(review.get('issues'), dict):
-                raise ValueError('Редактор вернул некорректную проверку качества.')
-            issues = review['issues']
-            if any(sign not in SIGNS or not isinstance(note, str) or not note.strip()
-                   for sign, note in issues.items()):
-                raise ValueError('Редактор вернул некорректные замечания.')
+            issues = review_edition(key, model, edition, history, reviewed_edition, reviewed_issues)
+            reviewed_edition = dict(edition)
+            reviewed_issues = issues
         if not issues:
             break
         repair_signs = set(issues)
