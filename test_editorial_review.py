@@ -72,7 +72,7 @@ class EvidenceTests(unittest.TestCase):
 
     def test_planner_and_reviewer_enable_reasoning(self):
         response = {'choices': [{'finish_reason': 'stop', 'message': {'content': '{}'}}]}
-        for instruction in (bot.PLAN_PROMPT, bot.QUALITY_PROMPT, bot.WRITE_PROMPT):
+        for instruction in (bot.PLAN_PROMPT, bot.QUALITY_PROMPT, bot.LANGUAGE_PROMPT, bot.WRITE_PROMPT):
             with patch.object(bot, 'request_json', return_value=response) as request:
                 bot.model_json('key', 'gpt-5.4', instruction, {})
                 payload = request.call_args.args[1]
@@ -80,6 +80,19 @@ class EvidenceTests(unittest.TestCase):
                     self.assertNotIn('reasoning_effort', payload)
                 else:
                     self.assertEqual(payload['reasoning_effort'], 'low')
+
+    def test_reports_all_bad_evidence_at_once(self):
+        issue = {'kind': 'language', 'quote': 'Выдуманная цитата', 'reason': 'Ошибка.'}
+        with self.assertRaises(ValueError) as error:
+            verified_issues({'issues': {'Овен': issue, 'Телец': issue}}, self.edition, [])
+        self.assertIn(self.edition['Овен'], str(error.exception))
+        self.assertIn(self.edition['Телец'], str(error.exception))
+
+    def test_review_history_excludes_stale_plans(self):
+        history = [{'date': '2026-09-21', 'forecasts': self.edition, 'plan': {'stale': 'plan'}}]
+        with patch.object(bot, 'model_json', return_value={'issues': {}}) as model:
+            bot.review_edition('key', 'model', self.edition, history)
+            self.assertNotIn('plan', model.call_args.args[3]['history'][0])
 
 
 if __name__ == '__main__':

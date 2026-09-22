@@ -8,13 +8,25 @@ def verified_issues(review, edition, history, changed=None):
         raise ValueError('Нужен объект issues.')
     issues = review['issues']
     checked = {}
+    errors = []
     for sign, issue in issues.items():
+        try:
+            target, note = verify_issue(sign, issue, edition, history, changed)
+            checked.setdefault(target, []).append(note)
+        except ValueError as exc:
+            errors.append(str(exc))
+    if errors:
+        raise ValueError('\n'.join(errors))
+    return checked
+
+
+def verify_issue(sign, issue, edition, history, changed):
         if sign not in edition or not isinstance(issue, dict):
             raise ValueError('Неизвестный знак или неверный формат замечания.')
         kind = issue.get('kind')
         quote = issue.get('quote')
         if kind not in KINDS or not isinstance(quote, str) or len(quote.strip()) < 8 or quote not in edition[sign]:
-            raise ValueError(f'{sign}: цитата должна дословно присутствовать в проверяемом абзаце.')
+            raise ValueError(f'{sign}: неверный kind или неточная цитата. Реальный проверяемый абзац: {edition[sign]}')
         if not isinstance(issue.get('reason'), str) or not issue['reason'].strip():
             raise ValueError(f'{sign}: нет объяснения нарушения.')
         target = sign
@@ -34,7 +46,9 @@ def verified_issues(review, edition, history, changed=None):
             other_quote = ref.get('quote')
             if (not isinstance(source, str) or not isinstance(other_quote, str)
                     or len(other_quote.strip()) < 8 or other_quote not in source):
-                raise ValueError(f'{sign}: дата, знак или цитата источника повтора не подтверждены историей.')
+                raise ValueError(f'{sign}: неверная ссылка или неточная цитата ({day}, {other_sign}). '
+                                 f'Реальный текст этого источника: {source!r}. '
+                                 'Процитируй его дословно, выбери настоящий источник или отзови неподтверждённое замечание.')
             # When an edited paragraph collides with a frozen one, repair the edited one.
             if changed is not None and sign not in changed and day == 'current' and other_sign in changed:
                 target = other_sign
@@ -42,5 +56,4 @@ def verified_issues(review, edition, history, changed=None):
                         'reference': {'date': 'current', 'sign': sign, 'quote': quote}}
         if changed is not None and target not in changed:
             raise ValueError(f'{sign}: абзац уже проверен и не менялся; проверяй исправления и новые пересечения.')
-        checked.setdefault(target, []).append(note)
-    return checked
+        return target, note

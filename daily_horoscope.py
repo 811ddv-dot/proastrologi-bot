@@ -66,7 +66,7 @@ def model_json(key, model, instruction, data):
             {'model': model, 'messages': [{'role': 'system', 'content': instruction},
                                         {'role': 'user', 'content': json.dumps(data, ensure_ascii=False)}],
              'max_completion_tokens': budget, 'response_format': {'type': 'json_object'},
-             **({'reasoning_effort': 'low'} if instruction in (PLAN_PROMPT, QUALITY_PROMPT) else {})},
+             **({'reasoning_effort': 'low'} if instruction in (PLAN_PROMPT, QUALITY_PROMPT, LANGUAGE_PROMPT) else {})},
             {'Authorization': f'Bearer {key}'})
         candidate = response['choices'][0]
         usage = response.get('usage')
@@ -182,7 +182,8 @@ def review_edition(key, model, edition, history, previous=None, previous_issues=
     changed = None if previous is None else {sign for sign in SIGNS if edition[sign] != previous[sign]}
     if changed is not None:
         changed.update(previous_issues or {})
-    context = {'edition': edition, 'history': history,
+    review_history = [{'date': item['date'], 'forecasts': item['forecasts']} for item in history]
+    context = {'edition': edition, 'history': review_history,
                'review_signs': list(SIGNS) if changed is None else sorted(changed),
                'previous_issues': previous_issues or {}}
     for attempt in range(2):
