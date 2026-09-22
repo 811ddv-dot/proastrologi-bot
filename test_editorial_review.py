@@ -2,10 +2,25 @@ import unittest
 from unittest.mock import patch
 
 import daily_horoscope as bot
-from editorial_review import verified_issues
+from editorial_review import verified_issues, grounded_quote
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_recovers_omitted_source_words_without_inventing(self):
+        source = ('Подход, казавшийся слишком смелым, встретит молчаливое одобрение '
+                  'и перестанет выглядеть странно. После этого будет легче действовать.')
+        quote = ('Подход, казавшийся слишком смелым, встретит молчаливое одобрение. '
+                 'После этого будет легче действовать.')
+        result = grounded_quote(source, quote)
+        self.assertIsNotNone(result)
+        self.assertIn(result, source)
+        self.assertIn('и перестанет выглядеть странно', result)
+        self.assertIsNone(grounded_quote(source, quote.replace('молчаливое', 'бурное')))
+
+    def test_sparse_word_salad_is_not_a_quote(self):
+        source = 'один а б в г два д е ё ж три з и й к четыре л м н о пять п р с т шесть'
+        self.assertIsNone(grounded_quote(source, 'один два три четыре пять шесть'))
+
     def setUp(self):
         self.edition = {sign: 'Прогноз для знака ' + sign for sign in bot.SIGNS}
         self.issue = {'kind': 'duplicate', 'quote': self.edition['Овен'],
