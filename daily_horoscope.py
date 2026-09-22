@@ -65,7 +65,8 @@ def model_json(key, model, instruction, data):
             'https://api.openai.com/v1/chat/completions',
             {'model': model, 'messages': [{'role': 'system', 'content': instruction},
                                         {'role': 'user', 'content': json.dumps(data, ensure_ascii=False)}],
-             'max_completion_tokens': budget, 'response_format': {'type': 'json_object'}},
+             'max_completion_tokens': budget, 'response_format': {'type': 'json_object'},
+             **({'reasoning_effort': 'low'} if instruction in (PLAN_PROMPT, QUALITY_PROMPT) else {})},
             {'Authorization': f'Bearer {key}'})
         candidate = response['choices'][0]
         usage = response.get('usage')
