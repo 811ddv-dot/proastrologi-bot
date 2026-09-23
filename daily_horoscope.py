@@ -515,6 +515,10 @@ def main():
         parser.error('--date разрешён только вместе с --preview')
     if args.preview_days != 1 and not args.preview:
         parser.error('--preview-days разрешён только вместе с --preview')
+    start_date = os.environ.get('PRODUCTION_START_DATE', '2026-09-25')
+    if not args.preview and start_date and datetime.now(ZoneInfo('Europe/Moscow')).date() < date.fromisoformat(start_date):
+        print('Ежедневная публикация начинается 25 сентября 2026 по Москве.')
+        return
     day = args.date or (next_edition_date() if args.tomorrow else datetime.now(ZoneInfo('Europe/Moscow')).date())
     if args.preview:
         authorize_preview_budget(day, args.preview_days, args.preview)
@@ -539,7 +543,16 @@ def main():
         remember(bundle)
         print('Восстановлена история подтверждённой публикации, без генерации и отправки.')
         return
-    bundle = generate_bundle(day, read_history())
+    approved = GENERATION_STORE.data.get('approved_preview') if GENERATION_STORE is not None else None
+    if approved is not None:
+        if approved.get('date') != day.isoformat():
+            raise RuntimeError('Неверная дата сохранённого проверенного выпуска.')
+        format_edition(day, approved['forecasts'])
+        bundle = dict(approved)
+        bundle['editorial_report'] = {'date': str(day), 'saved_preview': True,
+            'spent_usd_estimate': API_BUDGET.spent, 'budget_usd': API_BUDGET.limit}
+    else:
+        bundle = generate_bundle(day, read_history())
     publish_bundle(day, bundle)
 
 

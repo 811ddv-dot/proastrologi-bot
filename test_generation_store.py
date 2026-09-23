@@ -28,6 +28,9 @@ class FakeRepository:
 
 class CheckpointTests(unittest.TestCase):
     def setUp(self):
+        start = patch.dict('os.environ', {'PRODUCTION_START_DATE': '2000-01-01'})
+        start.start()
+        self.addCleanup(start.stop)
         self.repo = FakeRepository()
         self.day = date(2026, 9, 24)
         self.store = GenerationStore(self.day, self.repo)

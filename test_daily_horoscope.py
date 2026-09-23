@@ -23,6 +23,9 @@ def sample_plan():
 
 class EditorialTests(unittest.TestCase):
     def setUp(self):
+        start = patch.dict('os.environ', {'PRODUCTION_START_DATE': '2000-01-01'})
+        start.start()
+        self.addCleanup(start.stop)
         self.budget_patch = patch.object(bot, 'API_BUDGET', bot.RequestBudget())
         self.budget_patch.start()
         self.addCleanup(self.budget_patch.stop)

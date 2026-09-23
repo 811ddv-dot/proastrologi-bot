@@ -71,6 +71,10 @@ def edit_with_budget(bot, day, key, model, plan, draft, payload, history):
 
 
 def report_text(report):
+    if report.get('saved_preview'):
+        return (f"Выпуск на {report['date']} опубликован из сохранённого проверенного текста.\n"
+                f"Новых генераций и доработок: 0. Дополнительный расход: $0.\n"
+                f"Расчётный расход на подготовку ранее: ${report['spent_usd_estimate']:.4f}.")
     remaining = report['remaining_signs']
     text = (f"Выпуск на {report['date']} опубликован.\n"
             f"Доработок: {report['repair_rounds']} раундов, {report['sign_rewrites']} переписываний знаков.\n"
