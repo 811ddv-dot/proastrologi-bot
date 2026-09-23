@@ -32,5 +32,5 @@ class PreviewBudgetTests(unittest.TestCase):
             (date(2026, 9, 26), 3, True, self.now),
             (date(2026, 9, 26), 1, True, self.now.replace(day=24))]:
             bot.authorize_preview_budget(day, count, preview, now)
-            self.assertEqual(self.budget.limit, .5)
-            self.assertEqual(self.budget.max_calls, 8)
+            self.assertEqual(self.budget.limit, 1)
+            self.assertEqual(self.budget.max_calls, 1000)

@@ -148,6 +148,7 @@ class EditorialTests(unittest.TestCase):
             self.assertEqual(request.call_args.args[1]['max_completion_tokens'], 6000)
 
     def test_budget_blocks_ninth_request_before_network(self):
+        bot.API_BUDGET.max_calls = 8
         response = {'usage': {'prompt_tokens': 1, 'completion_tokens': 1},
                     'choices': [{'finish_reason': 'stop', 'message': {'content': '{}'}}]}
         with patch.object(bot, 'request_json', return_value=response) as request:
@@ -158,7 +159,7 @@ class EditorialTests(unittest.TestCase):
             self.assertEqual(request.call_count, 8)
 
     def test_budget_blocks_cost_before_network(self):
-        bot.API_BUDGET.spent = .49
+        bot.API_BUDGET.spent = .99
         with patch.object(bot, 'request_json') as request:
             with self.assertRaises(RuntimeError):
                 bot.model_json('test', 'gpt-5.4', 'instruction', {})
@@ -265,9 +266,11 @@ class EditorialTests(unittest.TestCase):
         edition = {sign: 'text' for sign in bot.SIGNS}
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test'}), \
                 patch.object(bot, 'edition_issues', return_value={'Овен': ['неверный текст']}), \
-                patch.object(bot, 'model_json', side_effect=[plan, edition] + [edition] * bot.EDITORIAL_ATTEMPTS):
-            with self.assertRaisesRegex(RuntimeError, 'Ничего не опубликовано'):
-                bot.generate_bundle(date(2026, 9, 21), [])
+                patch.object(bot, 'model_json', side_effect=[plan, edition] + [edition] * 4 + [bot.BudgetExhausted()]):
+            bundle = bot.generate_bundle(date(2026, 9, 21), [])
+            self.assertEqual(bundle['editorial_report']['reason'], 'budget')
+            self.assertEqual(bundle['editorial_report']['repair_rounds'], 3)
+            self.assertEqual(bundle['editorial_report']['remaining_signs'], 1)
 
     def test_repair_preserves_other_signs_even_if_model_changes_them(self):
         edition = {sign: 'original ' + sign for sign in bot.SIGNS}

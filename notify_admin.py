@@ -23,6 +23,11 @@ def notify(test=False):
             '⚠️ В работе @proastrologi произошёл сбой. Проверь запуск по ссылке ниже. '
             'Не перезапускай отправку вслепую: пост мог уйти до ошибки сохранения истории.')
     run_id = os.environ.get('GITHUB_RUN_ID', '')
+    if '--report' in sys.argv:
+        import json
+        from pathlib import Path
+        from budget_editor import report_text
+        text = report_text(json.loads(Path('publication-report.json').read_text(encoding='utf-8')))
     if run_id.isdigit():
         text += f'\nhttps://github.com/811ddv-dot/proastrologi-bot/actions/runs/{run_id}'
     result = request_json(base + 'sendMessage', {'chat_id': chat_id, 'text': text})

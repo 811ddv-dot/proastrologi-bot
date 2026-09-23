@@ -16,7 +16,7 @@ def open_full25_store(day):
     bot.GENERATION_STORE = GenerationStore(day, test_api)
     bot.API_BUDGET = bot.RequestBudget()
     bot.API_BUDGET.limit = 1.0
-    bot.API_BUDGET.max_calls = 18
+    bot.API_BUDGET.max_calls = 1000
     bot.API_BUDGET.calls = bot.GENERATION_STORE.data['calls']
     bot.API_BUDGET.spent = bot.GENERATION_STORE.data['spent']
 

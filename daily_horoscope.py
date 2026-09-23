@@ -60,6 +60,10 @@ def validate_originality(edition, history):
             raise ValueError('Прогнозы знаков слишком похожи.')
 
 
+class BudgetExhausted(RuntimeError):
+    pass
+
+
 class RequestBudget:
     """Conservative USD estimate, shared by all preview days in this process.
 
@@ -70,8 +74,8 @@ class RequestBudget:
     def __init__(self):
         self.calls = 0
         self.spent = 0.0
-        self.limit = .50
-        self.max_calls = 8
+        self.limit = 1.0
+        self.max_calls = 1000
 
     def reserve(self, model, messages, output):
         if model not in ('gpt-5.4', 'gpt-5-mini'):
@@ -83,7 +87,7 @@ class RequestBudget:
         # Use GPT-5.4 rates conservatively for either allowed model.
         amount = (inputs * 2.5 + output * 15) / 1000000
         if self.calls >= self.max_calls or self.spent + amount > self.limit:
-            raise RuntimeError(f'Лимит запуска: {self.max_calls} API-запросов или ${self.limit:.2f} расчётного бюджета. Повторные запросы остановлены.')
+            raise BudgetExhausted(f'Следующий запрос не помещается в бюджет ${self.limit:.2f}.')
         self.calls += 1
         self.spent += amount
         return amount
@@ -356,45 +360,8 @@ def generate_bundle(day, history):
     editorial_input = {'date': day.isoformat(), 'plan': plan, 'edition': draft,
                        'examples': EXAMPLES, 'history': history,
                        'originality_instruction': INSTRUCTION}
-    repair_signs = None
-    feedback_history = []
-    reviewed_edition = None
-    reviewed_issues = None
-    format_attempts = 0
-    content_attempts = 0
-    replanned = False
-    for attempt in range(EDITORIAL_ATTEMPTS * 2):
-        candidate = clean_labels(model_json(key, model,
-            REPAIR_PROMPT if repair_signs is not None else LANGUAGE_PROMPT, editorial_input))
-        if repair_signs is not None and isinstance(candidate, dict) and isinstance(edition, dict):
-            edition = {sign: candidate.get(sign, edition.get(sign)) if sign in repair_signs
-                       else edition[sign] for sign in SIGNS}
-        else:
-            edition = candidate
-        issues = edition_issues(edition, history)
-        if issues:
-            format_attempts += 1
-        else:
-            issues = review_edition(key, model, edition, history, reviewed_edition, reviewed_issues)
-            reviewed_edition = dict(edition)
-            reviewed_issues = issues
-            if issues:
-                content_attempts += 1
-        if not issues:
-            break
-        repair_signs = set(issues)
-        editorial_input = repair_payload(day, plan, edition, issues, feedback_history, history)
-        replanned = replanned or bool(editorial_input['replace_story'])
-        feedback_history.append(issues)
-        print(f'Редактура: содержание {content_attempts}/{EDITORIAL_ATTEMPTS}, '
-              f'формат {format_attempts}/{EDITORIAL_ATTEMPTS}: {issues}', file=sys.stderr, flush=True)
-        if max(format_attempts, content_attempts) >= EDITORIAL_ATTEMPTS:
-            raise RuntimeError('Редактура не прошла проверку. Ничего не опубликовано.')
-    else:
-        raise RuntimeError('Редактура не прошла проверку. Ничего не опубликовано.')
-    print(f'{day}: написание и отдельная языковая редактура завершены.', file=sys.stderr, flush=True)
-    # A superseded plan must never be saved as the plan of the final text.
-    return {'date': day.isoformat(), 'forecasts': edition, **({} if replanned else {'plan': plan})}
+    from budget_editor import edit_with_budget
+    return edit_with_budget(sys.modules[__name__], day, key, model, plan, draft, editorial_input, history)
 
 
 def validate_language(edition):
@@ -477,6 +444,9 @@ def publish_bundle(day, bundle):
         GENERATION_STORE.finish_delivery(response['result']['message_id'])
     print(f'Отправлен 1 пост, 12 знаков; message_id={response["result"]["message_id"]}', flush=True)
     remember(bundle)
+
+    if 'editorial_report' in bundle:
+        Path('publication-report.json').write_text(json.dumps(bundle['editorial_report'], ensure_ascii=False), encoding='utf-8')
 
 
 def preview_sequence(day, count):
