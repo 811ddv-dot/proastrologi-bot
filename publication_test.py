@@ -7,6 +7,20 @@ from zoneinfo import ZoneInfo
 import daily_horoscope as bot
 
 
+def open_full25_store(day):
+    """New owner-authorized full cycle, at most $1 additional across all retries."""
+    from generation_store import GenerationStore
+    from history_store import api
+    def test_api(method, payload=None, path=None):
+        return api(method, payload, path='generation-state/2026-09-25-scheduled-test-2.json')
+    bot.GENERATION_STORE = GenerationStore(day, test_api)
+    bot.API_BUDGET = bot.RequestBudget()
+    bot.API_BUDGET.limit = 1.0
+    bot.API_BUDGET.max_calls = 18
+    bot.API_BUDGET.calls = bot.GENERATION_STORE.data['calls']
+    bot.API_BUDGET.spent = bot.GENERATION_STORE.data['spent']
+
+
 def run(mode):
     if datetime.now(ZoneInfo('Europe/Moscow')).date() != date(2026, 9, 23):
         raise RuntimeError('Окно разового теста закрыто.')
@@ -17,7 +31,10 @@ def run(mode):
     if any(item['date'] == str(day) for item in history):
         print('Тестовый выпуск уже опубликован; повтор пропущен.')
         return
-    bot.open_generation_store(day)
+    if mode == 'full25':
+        open_full25_store(day)
+    else:
+        bot.open_generation_store(day)
     delivery = bot.GENERATION_STORE.data.get('delivery')
     if delivery:
         if delivery.get('status') != 'sent':
@@ -37,7 +54,15 @@ def run(mode):
     else:
         if not any(item['date'] == '2026-09-24' for item in history):
             raise RuntimeError('Сначала должен завершиться тест сохранённого выпуска.')
-        bundle = bot.generate_bundle(day, history)
+        store = bot.GENERATION_STORE
+        if store.data.get('test_finished'):
+            raise RuntimeError('Разовый тест уже завершён; новая генерация запрещена.')
+        try:
+            bundle = bot.generate_bundle(day, history)
+        except Exception:
+            store.data['test_finished'] = True
+            store.save()
+            raise
     bot.publish_bundle(day, bundle)
 
 
