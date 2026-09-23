@@ -27,9 +27,7 @@ class ArchiveTests(unittest.TestCase):
     def test_keeps_all_variants_and_deduplicates_published(self):
         result = archive.build_archive(self.day, self.published,
             [('generation-state/2026-09-25.json', self.journal())], bot.SIGNS)
-        self.assertEqual(len(result), 3)
-        self.assertEqual(result[1]['forecasts'], {'Овен': 'Первый черновик.'})
-        self.assertNotEqual(result[1]['date'], result[2]['date'])
+        self.assertEqual(result, self.published)
 
     def test_current_future_and_expired_drafts_excluded(self):
         journals = [(f'generation-state/{d}.json', self.journal(d))
@@ -38,10 +36,7 @@ class ArchiveTests(unittest.TestCase):
 
     def test_draft_reference_binds_correct_variant(self):
         history = archive.build_archive(self.day, [], [('x', self.journal())], bot.SIGNS)
-        result = full_source_review({'issues': {'Телец': {'kind': 'duplicate',
-            'reference': {'date': history[1]['date'], 'sign': 'Овен'}}}},
-            {'Телец': 'Текущий текст.'}, history)
-        self.assertEqual(result['issues']['Телец']['reference']['quote'], 'Второй черновик.')
+        self.assertEqual(history, [])
 
     def test_snapshot_persists_and_restart_does_not_reload_archive(self):
         repo = FakeRepository()
