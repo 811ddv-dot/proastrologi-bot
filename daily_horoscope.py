@@ -17,6 +17,7 @@ from editorial_review import verified_issues, full_source_review
 SIGNS = dict(zip('Овен Телец Близнецы Рак Лев Дева Весы Скорпион Стрелец Козерог Водолей Рыбы'.split(), '♈♉♊♋♌♍♎♏♐♑♒♓'))
 MONTHS = 'января февраля марта апреля мая июня июля августа сентября октября ноября декабря'.split()
 from editorial import DOMAINS, MOODS, EXAMPLES, PLAN_PROMPT, WRITE_PROMPT, LANGUAGE_PROMPT, QUALITY_PROMPT, ADJUDICATE_PROMPT
+from editorial import REPAIR_PROMPT
 
 STATE = Path('horoscope-state/history.json')
 HISTORY_LIMIT = 30
@@ -132,7 +133,7 @@ def model_json(key, model, instruction, data):
             'https://api.openai.com/v1/chat/completions',
             {'model': model, 'messages': messages, 'service_tier': 'default',
              'max_completion_tokens': budget, 'response_format': {'type': 'json_object'},
-             **({'reasoning_effort': 'low'} if instruction in (PLAN_PROMPT, QUALITY_PROMPT, LANGUAGE_PROMPT, ADJUDICATE_PROMPT) else {})},
+             **({'reasoning_effort': 'low'} if instruction in (PLAN_PROMPT, QUALITY_PROMPT, LANGUAGE_PROMPT, ADJUDICATE_PROMPT, REPAIR_PROMPT) else {})},
             {'Authorization': f'Bearer {key}'})
         candidate = response['choices'][0]
         usage = response.get('usage')
@@ -282,6 +283,9 @@ def review_edition(key, model, edition, history, previous=None, previous_issues=
 def repair_payload(day, plan, edition, issues, feedback_history, history=None):
     """Only repair targets and cited conflicts; full history stays in validators."""
     targets = [sign for sign in SIGNS if sign in issues]
+    replace_story = [sign for sign in targets if any(
+        (isinstance(item, dict) and item.get('kind') == 'duplicate')
+        or (isinstance(item, str) and 'повтор' in item.lower()) for item in issues[sign])]
     feedback = {}
     for sign in targets:
         feedback[sign] = []
@@ -302,8 +306,10 @@ def repair_payload(day, plan, edition, issues, feedback_history, history=None):
         if notes:
             previous[sign] = notes
     payload = {'date': day.isoformat(), 'repair_signs': targets,
-            'plan': {sign: plan[sign] for sign in targets},
-            'edition': {sign: edition.get(sign) for sign in targets},
+            'plan': {sign: plan[sign] for sign in targets if sign not in replace_story and sign in plan},
+            'edition': {sign: edition.get(sign) for sign in targets if sign not in replace_story},
+            'replace_story': replace_story,
+            'rejected_texts': {sign: edition.get(sign) for sign in replace_story},
             'quality_feedback': feedback, 'previous_feedback': previous}
     if history is not None:
         from text_archive import INSTRUCTION
@@ -356,8 +362,10 @@ def generate_bundle(day, history):
     reviewed_issues = None
     format_attempts = 0
     content_attempts = 0
+    replanned = False
     for attempt in range(EDITORIAL_ATTEMPTS * 2):
-        candidate = clean_labels(model_json(key, model, LANGUAGE_PROMPT, editorial_input))
+        candidate = clean_labels(model_json(key, model,
+            REPAIR_PROMPT if repair_signs is not None else LANGUAGE_PROMPT, editorial_input))
         if repair_signs is not None and isinstance(candidate, dict) and isinstance(edition, dict):
             edition = {sign: candidate.get(sign, edition.get(sign)) if sign in repair_signs
                        else edition[sign] for sign in SIGNS}
@@ -376,6 +384,7 @@ def generate_bundle(day, history):
             break
         repair_signs = set(issues)
         editorial_input = repair_payload(day, plan, edition, issues, feedback_history, history)
+        replanned = replanned or bool(editorial_input['replace_story'])
         feedback_history.append(issues)
         print(f'Редактура: содержание {content_attempts}/{EDITORIAL_ATTEMPTS}, '
               f'формат {format_attempts}/{EDITORIAL_ATTEMPTS}: {issues}', file=sys.stderr, flush=True)
@@ -384,7 +393,8 @@ def generate_bundle(day, history):
     else:
         raise RuntimeError('Редактура не прошла проверку. Ничего не опубликовано.')
     print(f'{day}: написание и отдельная языковая редактура завершены.', file=sys.stderr, flush=True)
-    return {'date': day.isoformat(), 'plan': plan, 'forecasts': edition}
+    # A superseded plan must never be saved as the plan of the final text.
+    return {'date': day.isoformat(), 'forecasts': edition, **({} if replanned else {'plan': plan})}
 
 
 def validate_language(edition):
@@ -497,7 +507,7 @@ def preview_sequence(day, count):
     rows = ['# Проверка последовательных выпусков', '', '| Дата | Знак | Сфера | Настроение |',
             '|---|---|---|---|']
     for bundle in bundles:
-        for sign, plan in bundle['plan'].items():
+        for sign, plan in bundle.get('plan', {}).items():
             rows.append(f'| {bundle["date"]} | {sign} | {plan["domain"]} | {plan["mood"]} |')
     rows += ['', 'Во всех выпусках проверены состав знаков, длина, абзацы, повторяющиеся фразы, '
              'сходство с предыдущими выпусками, заданные канцеляризмы и копирование образцов. '
@@ -538,6 +548,10 @@ def main():
     day = args.date or (next_edition_date() if args.tomorrow else datetime.now(ZoneInfo('Europe/Moscow')).date())
     if args.preview:
         authorize_preview_budget(day, args.preview_days, args.preview)
+        if day == date(2026, 9, 26) and args.preview_days == 1:
+            from resume_preview26 import run
+            run()
+            return
         preview_sequence(day, args.preview_days)
         return
     if not args.preview and any(item['date'] == day.isoformat() for item in read_history()):

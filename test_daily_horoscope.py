@@ -171,8 +171,10 @@ class EditorialTests(unittest.TestCase):
                             'reason': 'Другой сюжет нужен', 'reference': ref}]}
         payload = bot.repair_payload(date(2026, 9, 24), sample_plan(), edition, issues, [])
         self.assertEqual(payload['repair_signs'], ['Овен'])
-        self.assertEqual(set(payload['plan']), {'Овен'})
-        self.assertEqual(payload['edition'], {'Овен': edition['Овен']})
+        self.assertEqual(payload['plan'], {})
+        self.assertEqual(payload['edition'], {})
+        self.assertEqual(payload['replace_story'], ['Овен'])
+        self.assertEqual(payload['rejected_texts'], {'Овен': edition['Овен']})
         self.assertEqual(payload['quality_feedback']['Овен'][0]['reference'], ref)
         self.assertNotIn('quote', payload['quality_feedback']['Овен'][0])
         for name in ('history', 'validation_error', 'examples'):
