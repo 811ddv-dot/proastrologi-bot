@@ -120,6 +120,15 @@ jobs:
         with:
           path: horoscope-state
           key: horoscope-history-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Send private publication cost and editing report
+        if: success() && inputs.preview != true && inputs.maintenance != true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.PROASTROLOGI }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+        run: |
+          if [ -f publication-report.json ]; then
+            python notify_admin.py --report
+          fi
       - name: Save readable preview
         if: always() && inputs.preview == true && inputs.maintenance != true
         uses: actions/upload-artifact@v4
