@@ -1,7 +1,7 @@
 name: Daily horoscope
 
 on:
-  # Only cron-job.org dispatches this workflow at 21:15 Europe/Moscow.
+  # cron-job.org dispatches daily at 21:00 Europe/Moscow; production starts September 25.
   workflow_dispatch:
     inputs:
       publication_test:
@@ -42,8 +42,7 @@ concurrency:
 
 jobs:
   publish:
-    # Keep production paused until the owner approves the preview.
-    if: inputs.preview == true || inputs.maintenance == true || inputs.publication_test == 'saved24' || inputs.publication_test == 'full25' || vars.PRODUCTION_ENABLED == 'true'
+    # Owner approved Mail summaries for daily production on September 25.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -86,6 +85,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GH_HISTORY_TOKEN: ${{ github.token }}
           DURABLE_GENERATION: "true"
+          PRODUCTION_START_DATE: "2026-09-25"
           PREVIEW: ${{ inputs.preview }}
           PUBLICATION_TEST: ${{ inputs.publication_test }}
           PREVIEW_DATE: ${{ inputs.preview_date }}
@@ -102,12 +102,12 @@ jobs:
           elif [ "$PREVIEW" = "true" ]; then
             export OPENAI_MODEL="$PREVIEW_MODEL"
             if [ -n "$PREVIEW_DATE" ]; then
-              python daily_horoscope.py --tomorrow --preview --date "$PREVIEW_DATE" --preview-days "$PREVIEW_DAYS"
+              python mail_production.py --preview --date "$PREVIEW_DATE"
             else
-              python daily_horoscope.py --tomorrow --preview --preview-days "$PREVIEW_DAYS"
+              python mail_production.py --preview
             fi
           else
-            python daily_horoscope.py --tomorrow
+            python mail_production.py
           fi
       - name: Save durable publication history
         if: always() && steps.history.outcome == 'success' && inputs.preview != true && inputs.maintenance != true
