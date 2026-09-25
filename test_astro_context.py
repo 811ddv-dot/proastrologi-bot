@@ -1,9 +1,18 @@
 import unittest
 from astro_context import house, aspects, signed_angle, SIGNS
-from astro_preview import validate_basis, preview_issues
+from astro_preview import validate_basis, preview_issues, editorial_issues
 from unittest.mock import patch
 
 class AstroTests(unittest.TestCase):
+    def test_editor_requires_real_quote(self):
+        forecasts = {'Овен': 'Домашняя сторона жизни.'}
+        review = {'issues': {'Овен': [{'quote': 'Домашняя сторона', 'reason': 'Неестественное сочетание.'}]}}
+        self.assertIn('Овен', editorial_issues(review, forecasts))
+        review['issues']['Овен'][0]['quote'] = 'Несуществующая цитата'
+        with self.assertRaises(ValueError):
+            editorial_issues(review, forecasts)
+        self.assertEqual(editorial_issues({'issues': {}}, forecasts), {})
+
     def test_foreign_word_is_rejected(self):
         with patch('astro_preview.bot.edition_issues', side_effect=lambda *args: {}):
             self.assertIn('Скорпион', preview_issues({'Скорпион': 'Может quietly напомнить.'}, []))
