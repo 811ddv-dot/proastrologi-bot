@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 from datetime import date
 import daily_horoscope as bot
@@ -39,6 +40,13 @@ def validate_basis(result, sky):
         if not expected or item.get('house') != expected['house'] or not isinstance(item.get('interpretation'), str) or not item['interpretation'].strip():
             raise ValueError(f'{sign}: основа не соответствует расчёту.')
 
+def preview_issues(forecasts, history):
+    issues = bot.edition_issues(forecasts, history)
+    for sign, text in (forecasts or {}).items():
+        if isinstance(text, str) and re.search(r'[A-Za-z]', text):
+            issues.setdefault(sign, []).append('Убери иностранные слова: текст целиком на русском.')
+    return issues
+
 def run(day):
     # Dedicated namespace: previews never contaminate publication/repetition history.
     def preview_api(method, payload=None, path=None):
@@ -47,7 +55,7 @@ def run(day):
     bot.GENERATION_STORE = store
     bot.API_BUDGET = bot.RequestBudget()
     bot.API_BUDGET.spent, bot.API_BUDGET.calls = store.data['spent'], store.data['calls']
-    if store.data.get('result'):
+    if store.data.get('result') and not preview_issues(store.data['result']['forecasts'], store.data.get('published_snapshot', [])):
         result = store.data['result']
         sky = store.data['sky']
     else:
@@ -62,6 +70,8 @@ def run(day):
         # Reuse the client's existing low-reasoning route only in this isolated process.
         bot.LANGUAGE_PROMPT = PROMPT
         payload = {'sky': sky, 'published_history': history}
+        if store.data.get('result'):
+            payload.update(previous=store.data['result'], corrections=preview_issues(store.data['result']['forecasts'], history))
         while True:
             result = bot.model_json(key, 'gpt-5.4', PROMPT, payload)
             if 'previous' in payload:
@@ -70,7 +80,7 @@ def run(day):
                         for field in ('forecasts', 'basis'):
                             result[field][sign] = payload['previous'][field][sign]
             validate_basis(result, sky)
-            issues = bot.edition_issues(result.get('forecasts'), history)
+            issues = preview_issues(result.get('forecasts'), history)
             if not issues:
                 bot.format_edition(day, result['forecasts'])
                 break

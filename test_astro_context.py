@@ -1,8 +1,14 @@
 import unittest
 from astro_context import house, aspects, signed_angle, SIGNS
-from astro_preview import validate_basis
+from astro_preview import validate_basis, preview_issues
+from unittest.mock import patch
 
 class AstroTests(unittest.TestCase):
+    def test_foreign_word_is_rejected(self):
+        with patch('astro_preview.bot.edition_issues', side_effect=lambda *args: {}):
+            self.assertIn('Скорпион', preview_issues({'Скорпион': 'Может quietly напомнить.'}, []))
+            self.assertEqual(preview_issues({'Скорпион': 'Может тихо напомнить.'}, []), {})
+
     def test_wraparound(self):
         self.assertEqual(signed_angle(1-359), 2)
         self.assertEqual(signed_angle(359-1), -2)
