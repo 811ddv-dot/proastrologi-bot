@@ -174,9 +174,9 @@ def run(day):
     store = GenerationStore(day, preview_api)
     bot.GENERATION_STORE = store
     bot.API_BUDGET = bot.RequestBudget()
-    # Explicit user approval: $2 TOTAL for this edition only, including prior spend.
+    # Explicit user approval: $3 TOTAL for this edition only, including prior spend.
     if day == date(2026, 9, 26):
-        bot.API_BUDGET.limit = 2.0
+        bot.API_BUDGET.limit = 3.0
     bot.API_BUDGET.spent, bot.API_BUDGET.calls = store.data['spent'], store.data['calls']
     if store.data.get('result') and store.data.get('editor_version') == EDITOR_VERSION and not preview_issues(store.data['result']['forecasts'], store.data.get('published_snapshot', [])):
         result = store.data['result']
