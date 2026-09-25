@@ -4,6 +4,13 @@ from astro_preview import validate_basis, preview_issues, editorial_issues, EDIT
 from unittest.mock import patch
 
 class AstroTests(unittest.TestCase):
+    def test_scoped_review_rejects_new_notes_on_unchanged_signs(self):
+        review = {'checks': {'Овен': {c: True for c in EDITOR_CRITERIA}}, 'issues': {}}
+        self.assertEqual(editorial_issues(review, {}, [], ['Овен']), {})
+        review['checks']['Телец'] = {c: True for c in EDITOR_CRITERIA}
+        with self.assertRaises(ValueError):
+            editorial_issues(review, {}, [], ['Овен'])
+
     def test_malformed_review_gets_bounded_retry(self):
         with patch('astro_preview.bot.model_json', side_effect=[{'issues': {}}, self.clean_review()]) as model:
             self.assertEqual(review_with_retry('test', {}, []), {})
