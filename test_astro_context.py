@@ -1,17 +1,73 @@
 import unittest
 from astro_context import house, aspects, signed_angle, SIGNS
-from astro_preview import validate_basis, preview_issues, editorial_issues
+from astro_preview import validate_basis, preview_issues, editorial_issues, EDITOR_CRITERIA
 from unittest.mock import patch
 
 class AstroTests(unittest.TestCase):
+    def clean_review(self):
+        return {'checks': {s: {c: True for c in EDITOR_CRITERIA} for s in SIGNS}, 'issues': {}}
+
     def test_editor_requires_real_quote(self):
         forecasts = {'Овен': 'Домашняя сторона жизни.'}
-        review = {'issues': {'Овен': [{'quote': 'Домашняя сторона', 'reason': 'Неестественное сочетание.'}]}}
+        review = self.clean_review()
+        review['checks']['Овен']['native'] = False
+        review['issues']['Овен'] = [{'criterion': 'native', 'quote': 'Домашняя сторона', 'reason': 'Неестественное сочетание.'}]
         self.assertIn('Овен', editorial_issues(review, forecasts))
         review['issues']['Овен'][0]['quote'] = 'Несуществующая цитата'
         with self.assertRaises(ValueError):
             editorial_issues(review, forecasts)
-        self.assertEqual(editorial_issues({'issues': {}}, forecasts), {})
+        self.assertEqual(editorial_issues(self.clean_review(), forecasts), {})
+
+    def test_empty_old_review_cannot_pass(self):
+        with self.assertRaises(ValueError):
+            editorial_issues({'issues': {}}, {})
+
+    def test_checks_must_cover_every_sign_and_criterion(self):
+        review = self.clean_review()
+        del review['checks']['Овен']['tone']
+        with self.assertRaises(ValueError):
+            editorial_issues(review, {})
+        review = self.clean_review()
+        review['checks']['Овен']['tone'] = 'true'
+        with self.assertRaises(ValueError):
+            editorial_issues(review, {})
+
+    def test_failed_criterion_requires_evidence(self):
+        review = self.clean_review()
+        review['checks']['Овен']['coherence'] = False
+        with self.assertRaises(ValueError):
+            editorial_issues(review, {})
+
+    def test_repeat_requires_second_source(self):
+        forecasts = {'Овен': 'Нужно обсудить условия.', 'Телец': 'Обсудите условия встречи.'}
+        review = self.clean_review()
+        review['checks']['Овен']['intra_repeat'] = False
+        note = {'criterion': 'intra_repeat', 'quote': 'обсудить условия', 'reason': 'Тот же сюжет.'}
+        review['issues']['Овен'] = [note]
+        with self.assertRaises(ValueError):
+            editorial_issues(review, forecasts)
+        note['reference'] = {'sign': 'Телец', 'quote': 'Обсудите условия'}
+        self.assertIn('Овен', editorial_issues(review, forecasts))
+        note['reference']['sign'] = 'Овен'
+        with self.assertRaises(ValueError):
+            editorial_issues(review, forecasts)
+
+    def test_history_repeat_requires_published_quote(self):
+        review = self.clean_review()
+        review['checks']['Овен']['history_repeat'] = False
+        review['issues']['Овен'] = [{'criterion': 'history_repeat', 'quote': 'Покупка', 'reason': 'Повтор.',
+            'reference': {'date': '2026-09-25', 'sign': 'Телец', 'quote': 'Покупка'}}]
+        with self.assertRaises(ValueError):
+            editorial_issues(review, {'Овен': 'Покупка'}, [])
+        history = [{'date': '2026-09-25', 'forecasts': {'Телец': 'Покупка'}}]
+        self.assertIn('Овен', editorial_issues(review, {'Овен': 'Покупка'}, history))
+
+    def test_rejected_phrases_block_without_paid_review(self):
+        with patch('astro_preview.bot.edition_issues', side_effect=lambda *args: {}):
+            for phrase in ('Поддержит лёгкую встречу.', 'В центре маленькой симпатии.',
+                           'Переделывать договорённость.', 'День любит вашу инициативу.',
+                           'Отказываться из лени не стоит.'):
+                self.assertIn('Овен', preview_issues({'Овен': phrase}, []))
 
     def test_foreign_word_is_rejected(self):
         with patch('astro_preview.bot.edition_issues', side_effect=lambda *args: {}):
