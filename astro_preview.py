@@ -127,6 +127,18 @@ def validate_basis(result, sky):
         if not expected or item.get('house') != expected['house'] or not isinstance(item.get('interpretation'), str) or not item['interpretation'].strip():
             raise ValueError(f'{sign}: основа не соответствует расчёту.')
 
+def review_with_retry(key, forecasts, history):
+    context = {'forecasts': forecasts, 'published_history': history}
+    for attempt in range(3):
+        review = bot.model_json(key, 'gpt-5.4', EDITOR_PROMPT, context)
+        try:
+            return editorial_issues(review, forecasts, history)
+        except ValueError as exc:
+            if attempt == 2:
+                raise
+            context.update(invalid_review=review, validation_error=str(exc),
+                correction_request='Исправь ответ проверки. Цитаты только непрерывные, дословные; не склеивай предложения. Верни полный checks и issues.')
+
 def preview_issues(forecasts, history):
     issues = bot.edition_issues(forecasts, history)
     for sign, text in (forecasts or {}).items():
@@ -173,8 +185,7 @@ def run(day):
             existing = store.data['result']['forecasts']
             issues = preview_issues(existing, history)
             if not issues:
-                issues = editorial_issues(bot.model_json(key, 'gpt-5.4', EDITOR_PROMPT,
-                    {'forecasts': existing, 'published_history': history}), existing, history)
+                issues = review_with_retry(key, existing, history)
             if not issues:
                 store.data['editor_version'] = EDITOR_VERSION
                 store.save()
@@ -190,8 +201,7 @@ def run(day):
             validate_basis(result, sky)
             issues = preview_issues(result.get('forecasts'), history)
             if not issues:
-                issues = editorial_issues(bot.model_json(key, 'gpt-5.4', EDITOR_PROMPT,
-                    {'forecasts': result['forecasts'], 'published_history': history}), result['forecasts'], history)
+                issues = review_with_retry(key, result['forecasts'], history)
             if not issues:
                 bot.format_edition(day, result['forecasts'])
                 break

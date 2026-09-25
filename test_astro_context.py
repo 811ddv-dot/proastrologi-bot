@@ -1,9 +1,18 @@
 import unittest
 from astro_context import house, aspects, signed_angle, SIGNS
-from astro_preview import validate_basis, preview_issues, editorial_issues, EDITOR_CRITERIA
+from astro_preview import validate_basis, preview_issues, editorial_issues, EDITOR_CRITERIA, review_with_retry
 from unittest.mock import patch
 
 class AstroTests(unittest.TestCase):
+    def test_malformed_review_gets_bounded_retry(self):
+        with patch('astro_preview.bot.model_json', side_effect=[{'issues': {}}, self.clean_review()]) as model:
+            self.assertEqual(review_with_retry('test', {}, []), {})
+            self.assertEqual(model.call_count, 2)
+        with patch('astro_preview.bot.model_json', return_value={'issues': {}}) as model:
+            with self.assertRaises(ValueError):
+                review_with_retry('test', {}, [])
+            self.assertEqual(model.call_count, 3)
+
     def clean_review(self):
         return {'checks': {s: {c: True for c in EDITOR_CRITERIA} for s in SIGNS}, 'issues': {}}
 
