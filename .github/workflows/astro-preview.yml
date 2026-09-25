@@ -1,0 +1,42 @@
+name: Astronomy based preview
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Preview date (YYYY-MM-DD), no publication, $1 total per date'
+        required: true
+        default: '2026-09-27'
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: daily-horoscope
+  cancel-in-progress: false
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install skyfield==1.54
+      - run: python -m unittest -q
+      - name: Restore published history
+        env:
+          GH_HISTORY_TOKEN: ${{ github.token }}
+        run: python history_store.py restore
+      - name: Calculate and generate preview only
+        env:
+          GH_HISTORY_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TARGET_DATE: ${{ inputs.date }}
+        run: python astro_preview.py --date "$TARGET_DATE"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: astronomy-preview
+          path: astro-preview-output/
