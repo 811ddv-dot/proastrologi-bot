@@ -1,0 +1,37 @@
+name: Mail summary comparison (no publication)
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Tomorrow YYYY-MM-DD; comparison only; max $0.50'
+        required: true
+        default: '2026-09-26'
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: daily-horoscope
+  cancel-in-progress: false
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest -q test_mail_preview
+      - name: Summarize sources without Telegram access
+        env:
+          GH_HISTORY_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TARGET_DATE: ${{ inputs.date }}
+        run: python mail_preview.py --date "$TARGET_DATE"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mail-summary-comparison
+          path: mail-preview-output/
