@@ -15,6 +15,10 @@ def review(issues=None):
 
 
 class StableEditorTests(unittest.TestCase):
+    def test_confirmation_explicitly_requests_json_mode(self):
+        from stable_astro_editor import CONFIRM_PROMPT
+        self.assertIn('JSON', CONFIRM_PROMPT)
+
     def setup_loop(self, reviews, model_results):
         self.store = SimpleNamespace(data={'result': draft(), 'responses': {}, 'spent': 1.7129375}, save=Mock())
         self.bot = SimpleNamespace(SIGNS=['a', 'b'], ADJUDICATE_PROMPT='original',

@@ -172,6 +172,15 @@ def run(day):
     def preview_api(method, payload=None, path=None):
         return api(method, payload, path=f'generation-state/astro-preview-v1-{day}.json')
     store = GenerationStore(day, preview_api)
+    # Run 36124866350 explicitly received HTTP 400 (not an ambiguous timeout).
+    # Release only that rejected request's guard; retain its entire reservation
+    # conservatively so recovery cannot increase the approved spending envelope.
+    rejected = 'ae2f10285adeed1c5cac2c9e04fbbe599ba948c2d583548d94b66f58385468ce'
+    if day == date(2026, 9, 26) and store.data.get('pending') == rejected:
+        store.data.setdefault('rejected_requests', []).append(
+            {'key': rejected, 'run': 36124866350, 'status': 400, 'reservation_retained': True})
+        store.data['pending'] = None
+        store.save()
     bot.GENERATION_STORE = store
     bot.API_BUDGET = bot.RequestBudget()
     # Explicit user approval: $3 TOTAL for this edition only, including prior spend.
