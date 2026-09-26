@@ -192,7 +192,9 @@ def run(day, fetch_only=False):
     bot.API_BUDGET = bot.RequestBudget()
     previous = api('GET', path=f'generation-state/astro-preview-v1-{day}.json')
     prior_spend = json.loads(base64.b64decode(previous['content']))['spent'] if previous else 0
-    bot.API_BUDGET.limit = min(.50, max(0, 3 - prior_spend))
+    # One dollar per edition, including earlier astronomy preview spending.
+    # Saved summary spending below is restored, never reset on another run.
+    bot.API_BUDGET.limit = max(0, 1.00 - prior_spend)
     bot.API_BUDGET.spent, bot.API_BUDGET.calls = store.data['spent'], store.data['calls']
     sources = None
     if store.data.get('language_editor_version') != EDITOR_VERSION:
