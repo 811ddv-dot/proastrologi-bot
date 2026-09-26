@@ -12,20 +12,25 @@ jobs:
           MAX_BOT_TOKEN: ${{ secrets.MAX_BOT_TOKEN }}
         run: |
           python3 - <<'PY'
-          import json, os, urllib.request, urllib.error
+          import json, os, ssl, urllib.request, urllib.error
           token = os.environ.get('MAX_BOT_TOKEN', '').strip()
           if not token:
               raise SystemExit('MAX_BOT_TOKEN is missing')
+          with urllib.request.urlopen('https://gu-st.ru/content/Other/doc/russian_trusted_root_ca.cer', timeout=30) as response:
+              ca = response.read().decode('ascii')
+          context = ssl.create_default_context(cadata=ca)
           def get(path):
               req = urllib.request.Request('https://platform-api2.max.ru' + path,
                   headers={'Authorization': token})
               try:
-                  with urllib.request.urlopen(req, timeout=30) as response:
+                  with urllib.request.urlopen(req, timeout=30, context=context) as response:
                       return json.load(response)
               except urllib.error.HTTPError as exc:
                   raise SystemExit('MAX HTTP ' + str(exc.code)) from None
-              except (urllib.error.URLError, TimeoutError):
-                  raise SystemExit('MAX network or certificate error') from None
+              except urllib.error.URLError as exc:
+                  raise SystemExit('MAX connection: ' + str(exc.reason)) from None
+              except TimeoutError:
+                  raise SystemExit('MAX connection timeout') from None
           me = get('/me')
           print('Bot:', me.get('username'), 'ID:', me.get('user_id'))
           if me.get('username', '').lstrip('@') != 'id400406889818_bot':
