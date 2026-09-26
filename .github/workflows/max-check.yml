@@ -1,12 +1,31 @@
 name: Check MAX connection
 on:
   workflow_dispatch:
-permissions: {}
+permissions:
+  contents: read
 jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Test pipeline without paid requests
+        run: python3 -m unittest -q
+      - name: Verify production MAX client and channel
+        env:
+          MAX_BOT_TOKEN: ${{ secrets.MAX_BOT_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import max_delivery as mx
+          me = mx.request('/me')
+          assert me['username'] == mx.BOT_USERNAME
+          member = mx.request(f'/chats/{mx.CHANNEL_ID}/members/me')
+          assert member['is_admin'] and 'write' in member['permissions']
+          print('Production MAX client: verified bot, channel, write permission. No publication.')
+          PY
       - name: Verify bot and discover channel events (no publication)
         env:
           MAX_BOT_TOKEN: ${{ secrets.MAX_BOT_TOKEN }}

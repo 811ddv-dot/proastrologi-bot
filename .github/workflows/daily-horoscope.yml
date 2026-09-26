@@ -82,6 +82,8 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.PROASTROLOGI }}
           TELEGRAM_CHANNEL: "@proastrologi"
+          MAX_ENABLED: "true"
+          MAX_BOT_TOKEN: ${{ secrets.MAX_BOT_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GH_HISTORY_TOKEN: ${{ github.token }}
           DURABLE_GENERATION: "true"
