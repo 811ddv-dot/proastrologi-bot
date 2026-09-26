@@ -5,6 +5,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 import daily_horoscope as bot
 import mail_preview
+import max_delivery
 from generation_store import GenerationStore
 from history_store import api
 
@@ -17,7 +18,10 @@ def run(preview=False, target=None, now=None):
             raise ValueError('Явная дата разрешена только для предпросмотра.')
         if now.date() < date(2026, 9, 25) or now.hour < 21:
             raise RuntimeError('Публикация разрешена с 21:00 по Москве, начиная с 25 сентября.')
-        if any(row['date'] == str(day) for row in bot.read_history()):
+        existing = next((row for row in bot.read_history() if row['date'] == str(day)), None)
+        if existing is not None:
+            if max_delivery.enabled():
+                max_delivery.publish(existing, GenerationStore(day, api))
             print('Выпуск уже опубликован; повтор пропущен.')
             return
         delivery_store = GenerationStore(day, api)
@@ -29,6 +33,7 @@ def run(preview=False, target=None, now=None):
             if bundle['date'] != str(day):
                 raise ValueError('Неверная дата сохранённой отправки.')
             bot.remember(bundle)
+            max_delivery.publish(bundle, delivery_store)
             return
     mail_preview.run(day)
     summary_store = bot.GENERATION_STORE
@@ -50,6 +55,7 @@ def run(preview=False, target=None, now=None):
     # Generation journal is separate; delivery guard is shared with the old bot.
     bot.GENERATION_STORE = delivery_store
     bot.publish_bundle(day, bundle)
+    max_delivery.publish(bundle, delivery_store)
 
 
 if __name__ == '__main__':
