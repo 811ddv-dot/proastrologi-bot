@@ -1,0 +1,53 @@
+name: Check MAX connection
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify bot and discover channel events (no publication)
+        env:
+          MAX_BOT_TOKEN: ${{ secrets.MAX_BOT_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          token = os.environ.get('MAX_BOT_TOKEN', '').strip()
+          if not token:
+              raise SystemExit('MAX_BOT_TOKEN is missing')
+          def get(path):
+              req = urllib.request.Request('https://platform-api2.max.ru' + path,
+                  headers={'Authorization': token})
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raise SystemExit('MAX HTTP ' + str(exc.code)) from None
+              except (urllib.error.URLError, TimeoutError):
+                  raise SystemExit('MAX network or certificate error') from None
+          me = get('/me')
+          print('Bot:', me.get('username'), 'ID:', me.get('user_id'))
+          if me.get('username', '').lstrip('@') != 'id400406889818_bot':
+              raise SystemExit('Unexpected bot: refusing further requests')
+          data = get('/updates?timeout=0&limit=100')
+          ids = set()
+          for event in data.get('updates', []):
+              cid = event.get('chat_id')
+              if cid is None:
+                  cid = event.get('message', {}).get('recipient', {}).get('chat_id')
+              if cid is not None:
+                  ids.add(cid)
+          found = False
+          for cid in sorted(ids):
+              chat = get('/chats/' + str(cid))
+              if chat.get('type') == 'channel':
+                  member = get('/chats/' + str(cid) + '/members/me')
+                  print('Channel:', json.dumps({'chat_id': cid, 'title': chat.get('title'),
+                        'is_admin': member.get('is_admin'),
+                        'permissions': member.get('permissions')}, ensure_ascii=False))
+                  found = True
+          if not found:
+              print('No channel events available. Channel ID still required.')
+          print('No messages sent; no generation requested.')
+          PY
