@@ -96,11 +96,12 @@ def parse_source(raw, day):
 
 def fetch_sources(day):
     today = datetime.now(ZoneInfo('Europe/Moscow')).date()
-    if day != today + timedelta(days=1):
-        raise ValueError('Этот тест читает только завтрашний выпуск; подмена даты запрещена.')
+    if day not in (today, today + timedelta(days=1)):
+        raise ValueError('Разрешены только сегодняшний и завтрашний выпуски.')
+    period = 'today' if day == today else 'tomorrow'
     def fetch(item):
         sign, slug = item
-        url = f'https://horo.mail.ru/prediction/{slug}/tomorrow/'
+        url = f'https://horo.mail.ru/prediction/{slug}/{period}/'
         request = urllib.request.Request(url, headers={'User-Agent': 'proastrologi-preview/1.0'})
         for attempt in range(4):
             try:
