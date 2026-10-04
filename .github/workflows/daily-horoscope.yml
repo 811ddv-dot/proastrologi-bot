@@ -21,6 +21,10 @@ on:
         description: "Date for preview in YYYY-MM-DD (default: tomorrow in Moscow)"
         type: string
         default: ""
+      recovery_date:
+        description: "Publish the missed edition for today only (YYYY-MM-DD)"
+        type: string
+        default: ""
       preview_days:
         description: "Consecutive preview days (test history only)"
         type: choice
@@ -91,6 +95,7 @@ jobs:
           PREVIEW: ${{ inputs.preview }}
           PUBLICATION_TEST: ${{ inputs.publication_test }}
           PREVIEW_DATE: ${{ inputs.preview_date }}
+          RECOVERY_DATE: ${{ inputs.recovery_date }}
           PREVIEW_DAYS: ${{ inputs.preview_days || '1' }}
           OPENAI_MODEL: "gpt-5.4"
           PREVIEW_MODEL: ${{ inputs.preview_model || 'gpt-5.4' }}
@@ -109,7 +114,12 @@ jobs:
               python mail_production.py --preview
             fi
           else
-            python mail_production.py
+            if [ -n "$RECOVERY_DATE" ]; then
+              export RECOVERY_DATE
+              python mail_production.py --date "$RECOVERY_DATE"
+            else
+              python mail_production.py
+            fi
           fi
       - name: Save durable publication history
         if: always() && steps.history.outcome == 'success' && inputs.preview != true && inputs.maintenance != true
