@@ -1,7 +1,7 @@
 """Daily Mail summary publishing; shares the existing delivery guard/history."""
 import argparse
-import os
 from datetime import date, datetime, timedelta
+import os
 from pathlib import Path
 from zoneinfo import ZoneInfo
 import daily_horoscope as bot
@@ -19,9 +19,9 @@ def run(preview=False, target=None, now=None):
         is_recovery = (target is not None and recovery == str(target)
                        and target == now.date())
         if target is not None and not is_recovery:
-            raise ValueError('Явная дата разрешена только для восстановления текущего выпуска.')
-        if now.date() < date(2026, 9, 25) or (now.hour < 21 and not is_recovery):
-            raise RuntimeError('Публикация разрешена с 21:00 по Москве, начиная с 25 сентября.')
+            raise ValueError('Явная дата разрешена только для однодневного восстановления текущего выпуска.')
+        if now.date() < date(2026, 9, 25) or (now.hour < 12 and not is_recovery):
+            raise RuntimeError('Публикация разрешена с 12:00 по Москве, начиная с 25 сентября.')
         existing = next((row for row in bot.read_history() if row['date'] == str(day)), None)
         if existing is not None:
             if max_delivery.enabled():
