@@ -8,6 +8,8 @@ import json
 import os
 from pathlib import Path
 import re
+import time
+import urllib.error
 import urllib.request
 from zoneinfo import ZoneInfo
 
@@ -100,8 +102,15 @@ def fetch_sources(day):
         sign, slug = item
         url = f'https://horo.mail.ru/prediction/{slug}/tomorrow/'
         request = urllib.request.Request(url, headers={'User-Agent': 'proastrologi-preview/1.0'})
-        with urllib.request.urlopen(request, timeout=45) as response:
-            raw = response.read(2_000_000).decode('utf-8')
+        for attempt in range(4):
+            try:
+                with urllib.request.urlopen(request, timeout=45) as response:
+                    raw = response.read(2_000_000).decode('utf-8')
+                break
+            except (urllib.error.URLError, ConnectionError, TimeoutError):
+                if attempt == 3:
+                    raise
+                time.sleep(2 ** attempt)
         return sign, {'url': url, 'text': parse_source(raw, day)}
     with ThreadPoolExecutor(max_workers=3) as pool:
         sources = dict(pool.map(fetch, SLUGS.items()))
