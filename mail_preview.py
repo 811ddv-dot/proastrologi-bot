@@ -243,7 +243,10 @@ def run(day, fetch_only=False):
     if store.data.get('language_editor_version') != EDITOR_VERSION:
         sources = fetch_sources(day)
         metadata = {s: {'url': v['url'], 'hash': fingerprint(v['text'])} for s, v in sources.items()}
-        if store.data.get('sources') and store.data['sources'] != metadata:
+        prior_sources = store.data.get('sources', {})
+        if prior_sources and any(
+                prior_sources.get(sign, {}).get('hash') != item['hash']
+                for sign, item in metadata.items()):
             raise ValueError('Источник изменился; автоматический платный повтор запрещён.')
         store.data['sources'] = metadata
         store.save()
