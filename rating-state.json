@@ -1,8 +1,10 @@
 {
   "next_number": 2,
-  "status": "pending",
+  "status": "telegram_sent",
   "last_post_date": null,
   "pending_number": 2,
   "pending_date": "2026-10-13",
-  "pending_file": "rating-002.jpg"
+  "pending_file": "rating-002.jpg",
+  "_sha": "99cc1db11af2a30ea56839d4466ed804340fe5fb",
+  "telegram_message_id": 101
 }
