@@ -92,7 +92,7 @@ def main():
     photo_map = (media.get("photos") or {}).get("photoIds") or {}
     media_token = photo_map.get("token") or media.get("token")
     if not media_token:
-        print("MAX upload response keys:", sorted(media.keys()), "photos type:", type(media.get("photos")).__name__); raise RuntimeError("MAX media host did not confirm image upload")
+        print("MAX photos keys:", sorted(media["photos"].keys()), "photoIds type:", type(media["photos"].get("photoIds")).__name__, "photoIds keys:", sorted(media["photos"]["photoIds"].keys()) if isinstance(media["photos"].get("photoIds"), dict) else "not-dict"); raise RuntimeError("MAX media host did not confirm image upload")
     time.sleep(5)
 
     state["status"] = "max_pending"
