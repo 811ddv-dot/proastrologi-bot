@@ -90,9 +90,9 @@ def main():
     except urllib.error.URLError as exc:
         raise RuntimeError(f"MAX media host network/TLS error ({type(exc.reason).__name__})") from None
     photo_map = (media.get("photos") or {}).get("photoIds") or {}
-    media_token = photo_map.get("token")
+    media_token = photo_map.get("token") or media.get("token")
     if not media_token:
-        raise RuntimeError("MAX media host did not confirm image upload")
+        print("MAX upload response keys:", sorted(media.keys()), "photos type:", type(media.get("photos")).__name__); raise RuntimeError("MAX media host did not confirm image upload")
     time.sleep(5)
 
     state["status"] = "max_pending"
