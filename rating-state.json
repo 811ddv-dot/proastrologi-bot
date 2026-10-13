@@ -1,6 +1,6 @@
 {
   "next_number": 2,
-  "status": "telegram_sent",
+  "status": "max_pending",
   "last_post_date": null,
   "pending_number": 2,
   "pending_date": "2026-10-13",
