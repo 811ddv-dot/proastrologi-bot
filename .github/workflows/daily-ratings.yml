@@ -1,0 +1,55 @@
+name: Daily zodiac rating
+
+on:
+  # cron-job.org dispatches this workflow daily at 18:00 Europe/Moscow.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-zodiac-rating
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Restore rating image bundle
+        id: rating-cache
+        uses: actions/cache@v4
+        with:
+          path: .rating-assets
+          key: zodiac-ratings-v1
+      - name: Download and verify the hosted image bundle
+        if: steps.rating-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .rating-assets
+          curl --fail --location --retry 3 \
+            https://github.com/811ddv-dot/proastrologi-bot/releases/download/ratings-v1/ratings-002-365.zip \
+            --output /tmp/ratings-002-365.zip
+          python - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('/tmp/ratings-002-365.zip') as archive:
+              names = archive.namelist()
+              expected = {f'rating-{number:03d}.jpg' for number in range(2, 366)}
+              if set(names) != expected:
+                  raise SystemExit(f'Unexpected archive contents: {len(names)} files')
+              archive.extractall('.rating-assets')
+          PY
+      - name: Save verified image bundle to cache
+        if: steps.rating-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .rating-assets
+          key: zodiac-ratings-v1
+      - name: Publish one rating to Telegram and MAX
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.PROASTROLOGI }}
+          MAX_BOT_TOKEN: ${{ secrets.MAX_BOT_TOKEN }}
+          RATING_HISTORY_TOKEN: ${{ github.token }}
+        run: python rating_publisher.py
