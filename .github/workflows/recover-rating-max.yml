@@ -1,0 +1,52 @@
+name: Recover zodiac rating in MAX only
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-zodiac-rating
+  cancel-in-progress: false
+
+jobs:
+  recover-max:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Restore rating image bundle
+        id: rating-cache
+        uses: actions/cache@v4
+        with:
+          path: .rating-assets
+          key: zodiac-ratings-v1
+      - name: Download and verify hosted image bundle
+        if: steps.rating-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .rating-assets
+          curl --fail --location --retry 3 \
+            https://github.com/811ddv-dot/proastrologi-bot/releases/download/ratings-v1/ratings-002-365.zip \
+            --output /tmp/ratings-002-365.zip
+          python - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('/tmp/ratings-002-365.zip') as archive:
+              expected = {f'rating-{number:03d}.jpg' for number in range(2, 366)}
+              if set(archive.namelist()) != expected:
+                  raise SystemExit('Unexpected archive contents')
+              archive.extractall('.rating-assets')
+          PY
+      - name: Save verified image bundle to cache
+        if: steps.rating-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .rating-assets
+          key: zodiac-ratings-v1
+      - name: Publish confirmed Telegram post to MAX only
+        env:
+          MAX_BOT_TOKEN: ${{ secrets.MAX_BOT_TOKEN }}
+          RATING_HISTORY_TOKEN: ${{ github.token }}
+        run: python rating_max_recovery.py
