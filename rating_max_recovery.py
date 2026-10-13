@@ -89,7 +89,7 @@ def main():
         raise RuntimeError(f"MAX media host rejected upload (HTTP {exc.code})") from None
     except urllib.error.URLError as exc:
         raise RuntimeError(f"MAX media host network/TLS error ({type(exc.reason).__name__})") from None
-    photo_map = (media.get("photos") or {}).get("photoIds") or {}
+    photo_map = (media.get("photos") or {}).get("0") or {}
     media_token = photo_map.get("token") or media.get("token")
     if not media_token:
         print("MAX photos keys:", sorted(media["photos"].keys()), "photoIds type:", type(media["photos"].get("photoIds")).__name__, "photoIds keys:", sorted(media["photos"]["photoIds"].keys()) if isinstance(media["photos"].get("photoIds"), dict) else "not-dict"); raise RuntimeError("MAX media host did not confirm image upload")
