@@ -50,13 +50,13 @@ def save_state(state, sha):
 def main():
     remote = json_request(STATE_URL, headers=github_headers())
     state = json.loads(base64.b64decode(remote["content"]).decode())
-    if (state.get("status") != "telegram_sent" or state.get("pending_number") != 2
-            or state.get("pending_file") != "rating-002.jpg" or not state.get("telegram_message_id")):
-        raise RuntimeError("Recovery guard failed: expected confirmed Telegram post for rating 002")
+    if (state.get("status") != "telegram_sent" or not isinstance(state.get("pending_number"), int) or state.get("pending_number") < 1
+            or state.get("pending_file") != f"rating-{state.get('pending_number'):03d}.jpg" or not state.get("pending_date") or not state.get("telegram_message_id")):
+        raise RuntimeError("Recovery guard failed: expected a confirmed Telegram post awaiting MAX delivery")
     sha = remote["sha"]
-    image = Path(".rating-assets/rating-002.jpg")
+    image = Path(".rating-assets") / f"rating-{state['pending_number']:03d}.jpg"
     if not image.is_file():
-        raise RuntimeError("rating-002.jpg missing")
+        raise RuntimeError(f"{image.name} missing")
 
     ca = Path("max-root-ca.pem")
     context = ssl.create_default_context()
@@ -89,7 +89,7 @@ def main():
         raise RuntimeError(f"MAX media host rejected upload (HTTP {exc.code})") from None
     except urllib.error.URLError as exc:
         raise RuntimeError(f"MAX media host network/TLS error ({type(exc.reason).__name__})") from None
-    photo_map = (media.get("photos") or {}).get("0") or {}
+    photo_map = (media.get("photos") or {}).get("0") or (media.get("photos") or {}).get("photoIds") or {}
     media_token = photo_map.get("token") or media.get("token")
     if not media_token:
         print("MAX photos keys:", sorted(media["photos"].keys()), "photoIds type:", type(media["photos"].get("photoIds")).__name__, "photoIds keys:", sorted(media["photos"]["photoIds"].keys()) if isinstance(media["photos"].get("photoIds"), dict) else "not-dict"); raise RuntimeError("MAX media host did not confirm image upload")
@@ -103,10 +103,10 @@ def main():
     mid = (message.get("body") or {}).get("mid")
     if not mid or (message.get("recipient") or {}).get("chat_id") != CHANNEL:
         raise RuntimeError("MAX did not confirm the post; state remains max_pending")
-    next_state = {"next_number": 3, "status": "ready", "last_post_date": state["pending_date"],
-                  "last_number": 2, "telegram_message_id": state["telegram_message_id"], "max_message_id": mid}
+    next_state = {"next_number": state["pending_number"] + 1, "status": "ready", "last_post_date": state["pending_date"],
+                  "last_number": state["pending_number"], "telegram_message_id": state["telegram_message_id"], "max_message_id": mid}
     save_state(next_state, sha)
-    print("Rating 002 posted to MAX only. Telegram was not contacted.")
+    print(f"Rating {state['pending_number']:03d} posted to MAX only. Telegram was not contacted.")
 
 
 if __name__ == "__main__":
