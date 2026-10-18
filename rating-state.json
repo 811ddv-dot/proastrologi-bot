@@ -1,12 +1,8 @@
 {
-  "next_number": 4,
-  "status": "max_pending",
-  "last_post_date": "2026-10-14",
-  "last_number": 3,
+  "next_number": 5,
+  "status": "ready",
+  "last_post_date": "2026-10-18",
+  "last_number": 4,
   "telegram_message_id": 107,
-  "max_message_id": "mid.ffffb7df3a30a5b301a14d975f88534e",
-  "pending_number": 4,
-  "pending_date": "2026-10-18",
-  "pending_file": "rating-004.jpg",
-  "_sha": "c502a854ff0b8c8d0bc098402a2335890829c85a"
+  "max_message_id": "mid.ffffb7df3a30a5b301a14d9a87ec65f5"
 }
