@@ -187,7 +187,7 @@ def max_upload_image(path):
         raise RuntimeError("MAX image upload failed") from None
     # Image upload responses place the reusable media token in a nested photos map.
     uploaded = result.get("photos") or {}
-    token_record = uploaded.get("photoIds") or {}
+    token_record = uploaded.get("0") or uploaded.get("photoIds") or {}
     confirmed_token = token_record.get("token")
     if not confirmed_token:
         raise RuntimeError("MAX image upload was not confirmed")
