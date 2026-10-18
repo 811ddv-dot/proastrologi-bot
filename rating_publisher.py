@@ -163,7 +163,7 @@ def max_upload_image(path):
     try:
         with opener.open(request, timeout=45) as response:
             upload = json.load(response)
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
         raise RuntimeError("MAX upload URL request failed") from None
     upload_url = upload.get("url")
     if not upload_url:
@@ -178,13 +178,13 @@ def max_upload_image(path):
     ])
     request = urllib.request.Request(
         upload_url, data=body,
-        headers={"Authorization": token, "Content-Type": f"multipart/form-data; boundary={boundary}"},
+        headers={"Authorization": token, "Accept": "application/json", "Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST")
     try:
         with opener.open(request, timeout=90) as response:
             result = json.load(response)
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
-        raise RuntimeError("MAX image upload failed") from None
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError(f"MAX image upload failed ({getattr(exc, 'code', type(exc).__name__)})") from None
     # Image upload responses place the reusable media token in a nested photos map.
     uploaded = result.get("photos") or {}
     token_record = uploaded.get("0") or uploaded.get("photoIds") or {}
