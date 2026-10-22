@@ -155,7 +155,7 @@ def max_upload_image(path):
     token = os.environ.get("MAX_BOT_TOKEN", "").strip()
     if not token:
         raise RuntimeError("MAX bot token is missing")
-    context = ssl.create_default_context(cafile=str(Path(__file__).with_name("max-root-ca.pem")))
+    context = ssl.create_default_context(); context.load_verify_locations(cafile=str(Path(__file__).with_name("max-root-ca.pem")))
     opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context))
     request = urllib.request.Request(
         "https://platform-api2.max.ru/uploads?type=image", method="POST",
