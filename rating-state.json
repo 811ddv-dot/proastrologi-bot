@@ -1,8 +1,11 @@
 {
   "next_number": 17,
-  "status": "ready",
+  "status": "pending",
   "last_post_date": "2026-11-01",
   "last_number": 16,
   "telegram_message_id": 133,
-  "max_message_id": "mid.ffffb7df3a30a5b301a195b298e14885"
+  "max_message_id": "mid.ffffb7df3a30a5b301a195b298e14885",
+  "pending_number": 17,
+  "pending_date": "2026-11-02",
+  "pending_file": "rating-017.jpg"
 }
