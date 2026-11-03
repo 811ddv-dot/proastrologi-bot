@@ -1,12 +1,8 @@
 {
-  "next_number": 18,
-  "status": "telegram_sent",
-  "last_post_date": "2026-11-02",
-  "last_number": 17,
+  "next_number": 19,
+  "status": "ready",
+  "last_post_date": "2026-11-03",
+  "last_number": 18,
   "telegram_message_id": 136,
-  "max_message_id": "mid.ffffb7df3a30a5b301a19ad8e948201b",
-  "pending_number": 18,
-  "pending_date": "2026-11-03",
-  "pending_file": "rating-018.jpg",
-  "_sha": "f7b46563a875771da6eb6be7ecd1edd6cf7d9183"
+  "max_message_id": "mid.ffffb7df3a30a5b301a19fff5919661e"
 }
